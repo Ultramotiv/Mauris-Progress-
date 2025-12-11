@@ -1,0 +1,11 @@
+Timestamp,Exercise,Side,Name,Age,Gender,Diagnosis,Mode,Peak_Force_N,Average_Force_N,Start_Force_N,Time_to_Peak_s,Early_RFD_N_s
+2025-12-08 16:28:40,Shoulder Flexion,Left,Ashutosh,25,Male,trial1,Isometric,52,38.85,14.9,1.245,96
+2025-12-08 16:28:40,Shoulder Flexion,Right,Ashutosh,25,Male,trial1,Isometric,50.2,40.75,23.9,0.547,80
+2025-12-08 16:50:19,Hip Extension,Left,Ashutosh,26,Male,trial3,Isometric,49.49,42.63,21.59,1.381,19
+2025-12-08 16:50:19,Hip Extension,Right,Ashutosh,26,Male,trial3,Isometric,57.39,43.12,17.19,0.671,118
+2025-12-08 16:51:27,Hip Extension,Left,Ashutosh,26,Male,trial3,Isometric,49.69,42.4,12.19,1.484,16
+2025-12-08 16:51:27,Hip Extension,Right,Ashutosh,26,Male,trial3,Isometric,76.39,53.84,0.09,3.08,-27
+2025-12-09 10:47:09,Shoulder Flexion,Left,Ashutosh,26,Male,trial3,Isometric,47.46,36.43,16.85,4.993,93
+2025-12-09 10:47:09,Shoulder Flexion,Right,Ashutosh,26,Male,trial3,Isometric,32.37,29.35,3.17,0.833,31
+2025-12-09 11:03:15,Knee_extention,Left,Ashutosh,25,Male,trial6,Isometric,46.63,42.51,19.23,1.192,7
+2025-12-09 11:03:15,Knee_extention,Right,Ashutosh,25,Male,trial6,Isometric,59.73,50,16.24,1.041,81

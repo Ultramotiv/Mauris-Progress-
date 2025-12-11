@@ -1,0 +1,28 @@
+Date TimeStamp, Exercise,Name,Mode,Rep,Avg Force, Peak_Force, Start_Point,Time_to_peak,Force_at_3s 
+2025-11-27 14:50:48,Hip Adduction,Babras,RFD (3 trials),1,124.904,134.059,174,49,34,27
+2025-11-27 14:50:48,Hip Adduction,Babras,RFD (3 trials),2,127.341,147.064,176,61,133,40
+2025-11-27 14:50:48,Hip Adduction,Babras,RFD (3 trials),3,119.067,131.064,267,99,79,77
+2025-11-27 14:51:21,Shoulder Abduction,Babras,Isometric,1,129.077,137.264,88.964,2.987,137.264
+2025-11-27 15:47:26,Shoulder Abduction,Archanaaa,RFD (3 trials),1,61.623,70.543,233,86,76,54
+2025-11-27 15:47:26,Shoulder Abduction,Archanaaa,RFD (3 trials),2,71.008,82.429,374,38,103,15
+2025-11-27 15:47:26,Shoulder Abduction,Archanaaa,RFD (3 trials),3,79.746,96.843,358,216,232,194
+2025-11-27 15:55:57,Elbow Flexion,Archanaaa,RFD (3 trials),1,44.187,54.311,71,20,31,11
+2025-11-27 15:55:57,Elbow Flexion,Archanaaa,RFD (3 trials),2,46.531,55.811,62,22,2,9
+2025-11-27 15:55:57,Elbow Flexion,Archanaaa,RFD (3 trials),3,43.155,57.411,141,48,20,41
+2025-11-27 15:57:25,Elbow Flexion,Archanaaa,RFD (3 trials),1,35.684,47.511,51,17,50,9
+2025-11-27 15:57:25,Elbow Flexion,Archanaaa,RFD (3 trials),2,51.362,58.811,60,33,47,28
+2025-11-27 15:57:25,Elbow Flexion,Archanaaa,RFD (3 trials),3,40.918,47.811,129,31,73,20
+2025-11-27 16:00:38,Elbow Flexion,Archanaaa,Isometric,1,34.594,38.011,23.411,3.493,36.873
+2025-11-27 16:01:10,Elbow Flexion,Archanaaa,Isometric,1,78.463,88.611,58.611,5.373,83.311
+2025-11-27 16:02:56,Elbow Flexion,Archanaaa,Isometric,1,63.035,78.511,28.111,0.807,61.712
+2025-11-28 12:02:15,Elbow Flexion,Arch,Isometric,1,45.569,56.374,22.574,5.378,49.874
+2025-11-28 12:04:29,Elbow Flexion,Arch,Isometric,1,40.020,48.292,11.092,4.098,46.292
+2025-11-28 12:04:47,Elbow Flexion,Arch,Isometric,1,38.992,44.092,10.892,1.489,42.592
+2025-11-28 12:07:17,Shoulder Flexion,Arch,Isometric,1,33.122,42.845,7.545,5.374,35.244
+2025-12-02 11:51:57,Shoulder Flexion,Archanaaa,Isometric,1,65.326,71.691,40.786,0.425,64.290
+2025-12-02 11:52:15,Shoulder Flexion,Archanaaa,Isometric,1,57.381,69.191,28.691,0.695,57.091
+2025-12-02 11:58:42,Shoulder Flexion,Archanaaa,RFD (3 trials),1,42.686,57.100,112,47,92,32
+2025-12-02 11:58:42,Shoulder Flexion,Archanaaa,RFD (3 trials),2,40.731,46.800,76,25,65,11
+2025-12-02 11:58:42,Shoulder Flexion,Archanaaa,RFD (3 trials),3,43.710,65.300,85,49,52,31
+2025-12-02 15:22:14,Elbow Flexion,asdhu,25,Male,trial1.3,Isometric,64.0,60.31,15.94,2.229,289.0
+2025-12-02 15:22:16,Elbow Flexion,asdhu,25,Male,trial1.3,Isometric,64.0,60.31,15.94,2.229,289.0

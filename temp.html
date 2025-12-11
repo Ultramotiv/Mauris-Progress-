@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robot Connection Debugger</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+            max-width: 800px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .input-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+        }
+        
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 14px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        .status {
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-weight: 600;
+            text-align: center;
+        }
+        
+        .status.disconnected {
+            background: #ffebee;
+            color: #c62828;
+        }
+        
+        .status.connected {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        
+        .status.testing {
+            background: #fff3e0;
+            color: #ef6c00;
+        }
+        
+        .data-display {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .data-card {
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        
+        .data-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .data-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #667eea;
+        }
+        
+        .data-unit {
+            font-size: 18px;
+            color: #999;
+        }
+        
+        .log-container {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            border-radius: 10px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 5px;
+            border-radius: 3px;
+        }
+        
+        .log-entry.info {
+            color: #4fc3f7;
+        }
+        
+        .log-entry.success {
+            color: #81c784;
+        }
+        
+        .log-entry.warning {
+            color: #ffb74d;
+        }
+        
+        .log-entry.error {
+            color: #e57373;
+        }
+        
+        .timestamp {
+            color: #999;
+            margin-right: 10px;
+        }
+        
+        .visualization {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .joint-indicator {
+            flex: 1;
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 10px;
+        }
+        
+        .joint-title {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 10px;
+            text-align: center;
+            font-weight: 600;
+        }
+        
+        .joint-bar {
+            height: 30px;
+            background: #e0e0e0;
+            border-radius: 15px;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .joint-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.3s ease;
+            border-radius: 15px;
+        }
+        
+        .joint-values {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 5px;
+            font-size: 11px;
+            color: #999;
+        }
+        
+        .takeoff-indicator {
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            font-weight: 600;
+            margin-bottom: 20px;
+            transition: all 0.3s;
+        }
+        
+        .takeoff-indicator.ready {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        
+        .takeoff-indicator.not-ready {
+            background: #ffebee;
+            color: #c62828;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 Robot Connection Debugger</h1>
+        <p class="subtitle">Test your Fairino Robot → Unity connection</p>
+        
+        <div class="input-group">
+            <label for="robotIP">Robot IP Address:</label>
+            <input type="text" id="robotIP" value="192.168.58.2" placeholder="e.g., 192.168.58.2">
+        </div>
+        
+        <div class="input-group">
+            <label for="port">Port:</label>
+            <input type="number" id="port" value="8080" placeholder="8080">
+        </div>
+        
+        <button id="testBtn">🚀 Start Testing Connection</button>
+        
+        <div id="status" class="status disconnected">
+            ❌ Not Connected
+        </div>
+        
+        <div class="takeoff-indicator not-ready" id="takeoffIndicator">
+            ✋ Takeoff Not Ready (J5 needs to be < 85°)
+        </div>
+        
+        <div class="data-display">
+            <div class="data-card">
+                <div class="data-label">Joint 4 (Yaw)</div>
+                <div class="data-value" id="j4Value">--</div>
+                <div class="data-unit">degrees</div>
+            </div>
+            <div class="data-card">
+                <div class="data-label">Joint 5 (Pitch)</div>
+                <div class="data-value" id="j5Value">--</div>
+                <div class="data-unit">degrees</div>
+            </div>
+            <div class="data-card">
+                <div class="data-label">Update Count</div>
+                <div class="data-value" id="updateCount">0</div>
+                <div class="data-unit">updates</div>
+            </div>
+        </div>
+        
+        <div class="visualization">
+            <div class="joint-indicator">
+                <div class="joint-title">Joint 4: -175° to -105°</div>
+                <div class="joint-bar">
+                    <div class="joint-bar-fill" id="j4Bar" style="width: 50%"></div>
+                </div>
+                <div class="joint-values">
+                    <span>-175°</span>
+                    <span id="j4Current">--</span>
+                    <span>-105°</span>
+                </div>
+            </div>
+            <div class="joint-indicator">
+                <div class="joint-title">Joint 5: 60° to 120°</div>
+                <div class="joint-bar">
+                    <div class="joint-bar-fill" id="j5Bar" style="width: 50%"></div>
+                </div>
+                <div class="joint-values">
+                    <span>60°</span>
+                    <span id="j5Current">--</span>
+                    <span>120°</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="log-container" id="logContainer">
+            <div class="log-entry info">
+                <span class="timestamp">[READY]</span>
+                Click "Start Testing Connection" to begin...
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let polling = false;
+        let pollInterval = null;
+        let lastUpdateCount = -1;
+        
+        const robotIPInput = document.getElementById('robotIP');
+        const portInput = document.getElementById('port');
+        const testBtn = document.getElementById('testBtn');
+        const statusDiv = document.getElementById('status');
+        const logContainer = document.getElementById('logContainer');
+        const j4ValueDiv = document.getElementById('j4Value');
+        const j5ValueDiv = document.getElementById('j5Value');
+        const updateCountDiv = document.getElementById('updateCount');
+        const j4Bar = document.getElementById('j4Bar');
+        const j5Bar = document.getElementById('j5Bar');
+        const j4Current = document.getElementById('j4Current');
+        const j5Current = document.getElementById('j5Current');
+        const takeoffIndicator = document.getElementById('takeoffIndicator');
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.innerHTML = `<span class="timestamp">[${timestamp}]</span>${message}`;
+            logContainer.appendChild(entry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+        
+        function updateStatus(connected, message) {
+            if (connected) {
+                statusDiv.className = 'status connected';
+                statusDiv.textContent = '✅ ' + message;
+            } else {
+                statusDiv.className = 'status disconnected';
+                statusDiv.textContent = '❌ ' + message;
+            }
+        }
+        
+        function updateVisualization(j4, j5) {
+            // Update J4 bar (-175 to -105)
+            const j4Percent = ((j4 - (-175)) / ((-105) - (-175))) * 100;
+            j4Bar.style.width = Math.max(0, Math.min(100, j4Percent)) + '%';
+            j4Current.textContent = j4.toFixed(1) + '°';
+            
+            // Update J5 bar (60 to 120)
+            const j5Percent = ((j5 - 60) / (120 - 60)) * 100;
+            j5Bar.style.width = Math.max(0, Math.min(100, j5Percent)) + '%';
+            j5Current.textContent = j5.toFixed(1) + '°';
+            
+            // Update takeoff indicator
+            if (j5 < 85) {
+                takeoffIndicator.className = 'takeoff-indicator ready';
+                takeoffIndicator.textContent = '🚀 TAKEOFF READY! (J5 = ' + j5.toFixed(1) + '° < 85°)';
+            } else {
+                takeoffIndicator.className = 'takeoff-indicator not-ready';
+                takeoffIndicator.textContent = '✋ Takeoff Not Ready (J5 = ' + j5.toFixed(1) + '° ≥ 85°)';
+            }
+        }
+        
+        async function testConnection() {
+            const ip = robotIPInput.value;
+            const port = portInput.value;
+            const url = `http://${ip}:${port}/robot_data?t=${Date.now()}`;
+            
+            try {
+                log(`🔍 Testing connection to ${url}...`, 'info');
+                
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Cache-Control': 'no-store, no-cache, must-revalidate',
+                        'Pragma': 'no-cache'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                
+                // Check if data is valid
+                if (data.j4 === undefined || data.j5 === undefined) {
+                    throw new Error('Invalid data format received');
+                }
+                
+                // Update UI
+                j4ValueDiv.textContent = data.j4.toFixed(1);
+                j5ValueDiv.textContent = data.j5.toFixed(1);
+                updateCountDiv.textContent = data.update_count;
+                
+                updateVisualization(data.j4, data.j5);
+                
+                // Check for new data
+                if (data.update_count !== lastUpdateCount) {
+                    lastUpdateCount = data.update_count;
+                    log(`✅ Received NEW data: J4=${data.j4.toFixed(1)}°, J5=${data.j5.toFixed(1)}°, Count=${data.update_count}`, 'success');
+                    
+                    // Check takeoff condition
+                    if (data.j5 < 85) {
+                        log(`🚀 TAKEOFF CONDITION MET! J5 (${data.j5.toFixed(1)}°) < 85°`, 'success');
+                    }
+                } else {
+                    log(`⚠️ Stale data: update_count=${data.update_count} (unchanged)`, 'warning');
+                }
+                
+                if (data.error) {
+                    log(`⚠️ Server reported error: ${data.error}`, 'warning');
+                }
+                
+                updateStatus(data.connected, `Connected (${data.connected ? 'Robot Online' : 'Robot Offline'})`);
+                
+                return true;
+                
+            } catch (error) {
+                log(`❌ Connection failed: ${error.message}`, 'error');
+                updateStatus(false, 'Connection Failed');
+                return false;
+            }
+        }
+        
+        testBtn.addEventListener('click', async () => {
+            if (polling) {
+                // Stop polling
+                polling = false;
+                clearInterval(pollInterval);
+                testBtn.textContent = '🚀 Start Testing Connection';
+                log('⏹️ Stopped polling', 'info');
+                updateStatus(false, 'Not Connected');
+            } else {
+                // Start polling
+                polling = true;
+                testBtn.textContent = '⏹️ Stop Testing';
+                log('▶️ Starting continuous polling (every 100ms)...', 'info');
+                
+                // Test immediately
+                await testConnection();
+                
+                // Then poll every 100ms
+                pollInterval = setInterval(testConnection, 100);
+            }
+        });
+        
+        // Initial test on page load
+        log('💡 TIP: Make sure your Python FastAPI server is running!', 'info');
+        log('💡 TIP: Enter your PC\'s IP address (not 192.168.58.2 which is the robot)', 'warning');
+    </script>
+</body>
+</html>

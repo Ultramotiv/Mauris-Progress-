@@ -1,0 +1,874 @@
+import sys
+sys.path.append('/home/um/fairino-python-sdk-main/linux/fairino')
+import Robot
+import time
+import signal
+import numpy as np
+import math
+import http.server
+import threading
+import json
+import webbrowser
+import shutil
+import os
+# ============================================================================
+# GLOBAL VARIABLES & TUNING (X-AXIS VERSION)
+# ============================================================================
+robot = None
+running = True
+fixed_tcp_ref = None
+current_tcp = None
+# TUNING — Optimized for pure X-axis admittance
+FORCE_TO_MOTION_SCALE = 6.0
+M = [1.6, 1.6, 1.4, 1.8, 1.8, 1.8]
+B = [2.5, 2.5, 2.5, 3.0, 3.0, 3.0]
+IK_TO_SERVO_RATIO = 2
+IK_UPDATE_RATE = 0.0025
+SERVO_UPDATE_RATE = 0.008
+FORCE_THRESHOLD = 0.8
+FORCE_FILTER_ALPHA = 0.28
+force_thresholds = [2.0, 2.0, 2.5, 1.0, 1.0, 1.0]
+joint_velocity = [0.0] * 6
+desired_joint_pos = [0.0] * 6
+filtered_desired_joints = None
+filtered_fx_world = 0.0
+baseline_forces = [0.0] * 6
+MAX_JOINT_VELOCITY = 60.0
+MIN_X = -800.0
+MAX_X = -450.0
+# ============================================================================
+# HELPERS
+# ============================================================================
+def euler_to_rotation_matrix(rx, ry, rz):
+    rx = math.radians(rx); ry = math.radians(ry); rz = math.radians(rz)
+    c, s = math.cos, math.sin
+    Rx = np.array([[1,0,0], [0,c(rx),-s(rx)], [0,s(rx),c(rx)]])
+    Ry = np.array([[c(ry),0,s(ry)], [0,1,0], [-s(ry),0,c(ry)]])
+    Rz = np.array([[c(rz),-s(rz),0], [s(rz),c(rz),0], [0,0,1]])
+    return Rz @ Ry @ Rx
+def transform_force_to_world(ft_forces, orientation):
+    R = euler_to_rotation_matrix(*orientation)
+    tcp_force = np.array([ft_forces[0], ft_forces[1], -ft_forces[2]])
+    world_force = R @ tcp_force
+    return world_force[0]
+def ema(new, old, alpha):
+    return alpha * new + (1 - alpha) * old
+# ============================================================================
+# FT SENSOR
+# ============================================================================
+def init_ft_sensor():
+    robot.FT_SetConfig(24, 0)
+    robot.FT_Activate(1)
+    time.sleep(1.0)
+    robot.SetLoadWeight(0, 0.0)
+    robot.FT_SetZero(1)
+    time.sleep(0.5)
+    print("✅ FT sensor ready")
+def calibrate_baseline(samples=150):
+    print("🔧 Calibrating baseline... (keep tool still)")
+    forces = []
+    for _ in range(samples):
+        ret = robot.FT_GetForceTorqueRCS()
+        if ret[0] == 0:
+            forces.append(ret[1][:6])
+        time.sleep(0.01)
+    if forces:
+        global baseline_forces
+        baseline_forces = np.mean(forces, axis=0).tolist()
+        print(f"📊 Baseline: {[f'{x:+.3f}' for x in baseline_forces]}")
+# ============================================================================
+# MAIN LOOP
+# ============================================================================
+def control_loop():
+    global running, filtered_fx_world, desired_joint_pos, joint_velocity
+    global filtered_desired_joints, fixed_tcp_ref, current_tcp
+    print("\n" + "="*80)
+    print("🤖 FULL-SCREEN ROBOT BREAKOUT GAME - X-AXIS CONTROL")
+    print("📐 Push LEFT (-800mm) → Paddle LEFT")
+    print("📐 Push RIGHT (-450mm) → Paddle RIGHT")
+    print("🎮 Break ALL bricks to WIN!")
+    print("="*80)
+    err, tcp = robot.GetActualTCPPose()
+    if err != 0: return
+    fixed_tcp_ref = tcp.copy()
+    if robot.ServoMoveStart() != 0: return
+    j = robot.GetActualJointPosDegree(flag=0)
+    if j[0] == 0:
+        desired_joint_pos[:] = j[1][:6]
+    filtered_desired_joints = desired_joint_pos[:]
+    acc_joints = None
+    ik_count = servo_count = 0
+    try:
+        while running:
+            t0 = time.time()
+            err, current_tcp = robot.GetActualTCPPose()
+            if err != 0:
+                time.sleep(IK_UPDATE_RATE); continue
+            ft = robot.FT_GetForceTorqueRCS()
+            if ft[0] != 0:
+                time.sleep(IK_UPDATE_RATE); continue
+            raw = ft[1][:6]
+            compensated = [raw[i] - baseline_forces[i] for i in range(6)]
+            for i in range(6):
+                if abs(compensated[i]) < force_thresholds[i]:
+                    compensated[i] = 0.0
+            fx_world = transform_force_to_world(compensated, current_tcp[3:6])
+            filtered_fx_world = ema(fx_world, filtered_fx_world, FORCE_FILTER_ALPHA)
+            active_force = filtered_fx_world if abs(filtered_fx_world) > FORCE_THRESHOLD else 0.0
+            delta_x = active_force * FORCE_TO_MOTION_SCALE
+            target_x = current_tcp[0] + delta_x
+            target_x = max(min(target_x, MAX_X), MIN_X)
+            target_tcp = [target_x,
+                          fixed_tcp_ref[1],
+                          fixed_tcp_ref[2],
+                          fixed_tcp_ref[3],
+                          fixed_tcp_ref[4],
+                          fixed_tcp_ref[5]]
+            ik = robot.GetInverseKin(0, target_tcp, -1)
+            if ik[0] != 0:
+                time.sleep(IK_UPDATE_RATE); continue
+            tj = np.array(ik[1][:6])
+            acc_joints = tj if acc_joints is None else acc_joints + tj
+            ik_count += 1
+            if ik_count >= IK_TO_SERVO_RATIO:
+                avg_joints = (acc_joints / IK_TO_SERVO_RATIO).tolist()
+                for j in range(6):
+                    err = avg_joints[j] - desired_joint_pos[j]
+                    f = err * 3.9
+                    acc = (f - B[j] * joint_velocity[j]) / M[j]
+                    joint_velocity[j] += acc * SERVO_UPDATE_RATE
+                    joint_velocity[j] = np.clip(joint_velocity[j], -MAX_JOINT_VELOCITY, MAX_JOINT_VELOCITY)
+                    desired_joint_pos[j] += joint_velocity[j] * SERVO_UPDATE_RATE
+                alpha = 0.32
+                if filtered_desired_joints is None:
+                    filtered_desired_joints = desired_joint_pos[:]
+                else:
+                    for j in range(6):
+                        filtered_desired_joints[j] = alpha * desired_joint_pos[j] + (1 - alpha) * filtered_desired_joints[j]
+                robot.ServoJ(filtered_desired_joints, [0]*6, 0, 0, SERVO_UPDATE_RATE, 0, 0)
+                if servo_count % 20 == 0:
+                    max_jv = max(abs(v) for v in joint_velocity)
+                    limit_status = ""
+                    if abs(current_tcp[0] - MIN_X) < 5:
+                        limit_status = " [LEFT LIMIT]"
+                    elif abs(current_tcp[0] - MAX_X) < 5:
+                        limit_status = " [RIGHT LIMIT]"
+                    print(f"🤖 Fx={filtered_fx_world:+6.2f}N → X={current_tcp[0]:+8.2f}mm{limit_status}")
+                acc_joints = None
+                ik_count = 0
+                servo_count += 1
+            sleep_t = IK_UPDATE_RATE - (time.time() - t0)
+            if sleep_t > 0:
+                time.sleep(sleep_t)
+    except Exception as e:
+        print("❌ Error:", e)
+    finally:
+        robot.ServoMoveEnd()
+# ============================================================================
+# HTTP SERVER
+# ============================================================================
+class GameHandler(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/position':
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            global current_tcp
+            x = current_tcp[0] if current_tcp else -625.0
+            self.wfile.write(json.dumps({'x': x}).encode())
+        else:
+            super().do_GET()
+def start_server():
+    server = http.server.HTTPServer(('', 8000), GameHandler)
+    print("🌐 Starting web server at http://localhost:8000")
+    server.serve_forever()
+# ============================================================================
+# SHUTDOWN
+# ============================================================================
+def shutdown(sig, frame):
+    global running
+    print("\n🛑 Stopping...")
+    running = False
+    time.sleep(0.5)
+    sys.exit(0)
+signal.signal(signal.SIGINT, shutdown)
+if __name__ == "__main__":
+    # Copy background image
+    bg_image_path = "/home/um/Downloads/wallpapersden.com_starry-sky-night-sky_wxl.jpg"
+    if os.path.exists(bg_image_path):
+        shutil.copy2(bg_image_path, "starry_sky.jpg")
+        print("✅ Starry background copied!")
+    else:
+        print("⚠️ Background image not found - using default")
+    
+    # COMPLETE FULL-SCREEN RESPONSIVE HTML - COLLECTIVE RAINBOW BRICKS
+    html_content = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🤖 FULL-SCREEN Robot Breakout Game</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #000;
+            color: #fff;
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+        }
+        .game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+        }
+        h1 {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            color: #4CAF50;
+            text-shadow: 0 0 20px #4CAF50, 0 0 40px #4CAF50;
+            font-size: clamp(24px, 4vw, 36px);
+            text-align: center;
+        }
+        .instructions {
+            position: absolute;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.9);
+            border: 2px solid #4CAF50;
+            border-radius: 15px;
+            padding: 20px 30px;
+            max-width: 90vw;
+            text-align: center;
+            color: #fff;
+            z-index: 1000;
+            box-shadow: 0 0 30px rgba(76, 175, 80, 0.5);
+            font-size: clamp(14px, 2vw, 16px);
+        }
+        .start-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(135deg, rgba(0,0,20,0.95), rgba(10,20,40,0.9));
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .start-button {
+            background: linear-gradient(45deg, #4CAF50, #45a049, #4CAF50);
+            background-size: 200% 200%;
+            color: white;
+            border: none;
+            padding: 25px 60px;
+            font-size: clamp(20px, 3vw, 28px);
+            font-weight: bold;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 15px 35px rgba(76,175,80,0.4);
+            transition: all 0.3s ease;
+            animation: gradient 3s ease infinite;
+            z-index: 1001;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        @keyframes gradient {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        .start-button:hover {
+            transform: translateY(-5px) scale(1.05);
+            box-shadow: 0 20px 45px rgba(76,175,80,0.6);
+        }
+        #gameCanvas {
+            width: 100vw !important;
+            height: 100vh !important;
+            max-width: 100% !important;
+            max-height: 100% !important;
+            display: block;
+            background-image: url('starry_sky.jpg');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            border: none;
+            cursor: none;
+        }
+        .game-ui {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            display: flex;
+            justify-content: space-between;
+            z-index: 100;
+            pointer-events: none;
+        }
+        .ui-element {
+            background: rgba(0,0,0,0.85);
+            color: #4CAF50;
+            padding: 15px 25px;
+            border-radius: 25px;
+            border: 2px solid #4CAF50;
+            font-weight: bold;
+            font-size: clamp(16px, 2vw, 20px);
+            box-shadow: 0 8px 25px rgba(76,175,80,0.3);
+            pointer-events: all;
+            backdrop-filter: blur(15px);
+        }
+        .overlay {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: linear-gradient(135deg, rgba(0,100,0,0.95), rgba(0,150,50,0.9));
+            padding: 40px;
+            border-radius: 20px;
+            text-align: center;
+            border: 4px solid #4CAF50;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.8);
+            display: none;
+            z-index: 200;
+            max-width: 90vw;
+            backdrop-filter: blur(20px);
+        }
+        .overlay.game-over {
+            background: linear-gradient(135deg, rgba(100,0,0,0.95), rgba(150,0,50,0.9));
+            border-color: #f44336;
+        }
+        .overlay h2 {
+            color: white;
+            margin-bottom: 20px;
+            font-size: clamp(2em, 6vw, 4em);
+            text-shadow: 2px 2px 8px rgba(0,0,0,0.8);
+        }
+        .restart-btn {
+            background: linear-gradient(45deg, #4CAF50, #45a049);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: clamp(16px, 2.5vw, 20px);
+            font-weight: bold;
+            border-radius: 25px;
+            cursor: pointer;
+            margin-top: 20px;
+            box-shadow: 0 8px 20px rgba(76,175,80,0.4);
+            transition: all 0.3s ease;
+        }
+        .restart-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 30px rgba(76,175,80,0.6);
+        }
+        @media (max-width: 768px) {
+            .game-ui {
+                flex-direction: column;
+                gap: 10px;
+                top: 10px;
+            }
+            .ui-element {
+                width: 100%;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <h1>🌈 RAINBOW COLLECTIVE ROBOT BREAKOUT 🌈</h1>
+        <!-- START SCREEN -->
+        <div class="start-screen" id="startScreen">
+            <div class="instructions">
+                <p><strong>🤖 ROBOT CONTROLS:</strong></p>
+                <p>👈 <strong>PUSH LEFT (-800mm)</strong> → Paddle <strong>LEFT</strong></p>
+                <p>👉 <strong>PUSH RIGHT (-450mm)</strong> → Paddle <strong>RIGHT</strong></p>
+                <p>🌈 <strong>COLLECTIVE RAINBOW BRICKS</strong> (Many bricks = One rainbow)</p>
+                <p>🎯 <strong>BREAK ALL BRICKS</strong> to WIN!</p>
+                <p>❤️ <strong>4 LIVES</strong> | Robot stops at limits</p>
+            </div>
+            <button class="start-button" onclick="startGame()">
+                🚀 START RAINBOW GAME 🚀
+            </button>
+        </div>
+        <!-- GAME UI -->
+        <div class="game-ui" id="gameUI" style="display: none;">
+            <div class="ui-element">
+                ⭐ <span id="score">0</span>
+            </div>
+            <div class="ui-element">
+                ❤️ <span id="lives">4</span>
+            </div>
+        </div>
+        <!-- FULL-SCREEN CANVAS -->
+        <canvas id="gameCanvas"></canvas>
+        <!-- WIN OVERLAY -->
+        <div class="overlay" id="winOverlay">
+            <h2>🎉 SPECTACULAR VICTORY! 🎉</h2>
+            <p>🏆 Final Score: <span id="finalScore">0</span></p>
+            <button class="restart-btn" onclick="restartGame()">🔄 Play Rainbow Again</button>
+        </div>
+        <!-- GAME OVER OVERLAY -->
+        <div class="overlay game-over" id="gameOverOverlay">
+            <h2>💀 GAME OVER 💀</h2>
+            <p>📊 Final Score: <span id="finalScoreGO">0</span></p>
+            <button class="restart-btn" onclick="restartGame()">🔄 Try Rainbow Again</button>
+        </div>
+    </div>
+    <script>
+        // 🔥 FULL-SCREEN RESPONSIVE CANVAS
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // DYNAMIC CANVAS SIZING
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            console.log(`🎮 Canvas: ${canvas.width}x${canvas.height}`);
+        }
+        
+        // INITIALIZE & AUTO-RESIZE
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+        
+        // 🔥 COLLECTIVE RAINBOW COLORS - Multiple bricks per color
+        const RAINBOW_COLORS = [
+            '#FF1744', '#F44336', '#E91E63', '#D81B60',  // RED (4 bricks)
+            '#FF5722', '#FF7043', '#FF9800', '#FFB74D',  // ORANGE (4 bricks)
+            '#FFC107', '#FFEB3B', '#FFF176', '#FFFF8D',  // YELLOW (4 bricks)
+            '#CDDC39', '#AFB42B', '#8BC34A', '#AED581',  // LIME/GREEN (4 bricks)
+            '#4CAF50', '#66BB6A', '#81C784', '#A5D6A7',  // GREEN (4 bricks)
+            '#00BCD4', '#26C6DA', '#4DD0E1', '#80DEEA',  // CYAN (4 bricks)
+            '#2196F3', '#42A5F5', '#64B5F6', '#90CAF9',  // BLUE (4 bricks)
+            '#9C27B0', '#AB47BC', '#BA68C8', '#CE93D8'   // VIOLET/PURPLE (4 bricks)
+        ];
+        
+        // 🔥 GAME CONSTANTS
+        let paddleX = 0;
+        let ballX = 0;
+        let ballY = 0;
+        let ballVX = 2;
+        let ballVY = -2.5;
+        
+        // Dynamic constants
+        let PADDLE_WIDTH, PADDLE_HEIGHT, PADDLE_Y;
+        let BALL_RADIUS;
+        let BRICK_ROWS, BRICK_COLS, BRICK_WIDTH, BRICK_HEIGHT, BRICK_PADDING;
+        let BRICK_OFFSET_X, BRICK_OFFSET_Y;
+        let bricks = [];
+        let score = 0;
+        let lives = 4;
+        let gameActive = false;
+        let gameRunning = true;
+        
+        // 🔥 UPDATE ALL CONSTANTS - MORE BRICKS
+        function updateGameConstants() {
+            const cw = canvas.width;
+            const ch = canvas.height;
+            
+            // Responsive paddle
+            PADDLE_WIDTH = Math.max(120, Math.min(200, cw * 0.12));
+            PADDLE_HEIGHT = Math.max(20, Math.min(30, ch * 0.025));
+            PADDLE_Y = ch - 80;
+            
+            // Responsive ball
+            BALL_RADIUS = Math.max(10, Math.min(14, cw * 0.012));
+            
+            // MORE BRICKS - 10x8 grid for collective rainbow effect
+            BRICK_ROWS = 8;
+            BRICK_COLS = 10;
+            BRICK_WIDTH = Math.floor((cw - 40) / BRICK_COLS);
+            BRICK_HEIGHT = Math.max(30, Math.min(40, ch * 0.045));
+            BRICK_PADDING = 8;
+            BRICK_OFFSET_X = 20;
+            BRICK_OFFSET_Y = 50;
+            
+            // Reset paddle position
+            paddleX = (cw - PADDLE_WIDTH) / 2;
+            console.log(`🌈 ${BRICK_COLS}x${BRICK_ROWS} = ${BRICK_COLS*BRICK_ROWS} RAINBOW bricks | Size: ${BRICK_WIDTH}x${BRICK_HEIGHT}`);
+        }
+        
+        // INITIALIZE CONSTANTS
+        updateGameConstants();
+        
+        // DRAW RAINBOW BRICKS WITH GLOW
+        function drawBricks() {
+            for (let c = 0; c < BRICK_COLS; c++) {
+                for (let r = 0; r < BRICK_ROWS; r++) {
+                    if (bricks[c] && bricks[c][r] && bricks[c][r].status === 1) {
+                        const brick = bricks[c][r];
+                        const color = brick.color;
+                        
+                        // Glowing effect
+                        ctx.shadowColor = color;
+                        ctx.shadowBlur = 12;
+                        
+                        // Main brick fill
+                        ctx.fillStyle = color;
+                        ctx.fillRect(brick.x, brick.y, brick.width, brick.height);
+                        
+                        // Bright border
+                        ctx.shadowBlur = 0;
+                        ctx.strokeStyle = color;
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(brick.x, brick.y, brick.width, brick.height);
+                    }
+                }
+            }
+        }
+        
+        // DRAW WHITE BALL WITH GLOW
+        function drawBall() {
+            // Multi-layer glow effect
+            for (let i = 2; i >= 0; i--) {
+                ctx.shadowColor = '#FFFFFF';
+                ctx.shadowBlur = BALL_RADIUS * (1.2 + i * 0.4);
+                ctx.beginPath();
+                ctx.arc(ballX, ballY, BALL_RADIUS + i * 1.5, 0, Math.PI * 2);
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fill();
+                ctx.closePath();
+            }
+            ctx.shadowBlur = 0;
+        }
+        
+        // DRAW PADDLE WITH GLOW
+        function drawPaddle() {
+            ctx.shadowColor = '#4CAF50';
+            ctx.shadowBlur = 15;
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(paddleX, PADDLE_Y, PADDLE_WIDTH, PADDLE_HEIGHT);
+            ctx.shadowBlur = 0;
+            
+            // Border
+            ctx.strokeStyle = '#4CAF50';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(paddleX, PADDLE_Y, PADDLE_WIDTH, PADDLE_HEIGHT);
+        }
+        
+        // CREATE COLLECTIVE RAINBOW BRICKS (Multiple bricks per color)
+        function initBricks() {
+            bricks = [];
+            let colorIndex = 0;
+            
+            for (let c = 0; c < BRICK_COLS; c++) {
+                bricks[c] = [];
+                for (let r = 0; r < BRICK_ROWS; r++) {
+                    // Sequential color assignment - multiple bricks per rainbow color
+                    const color = RAINBOW_COLORS[colorIndex % RAINBOW_COLORS.length];
+                    
+                    bricks[c][r] = {
+                        x: c * (BRICK_WIDTH + BRICK_PADDING) + BRICK_OFFSET_X,
+                        y: r * (BRICK_HEIGHT + BRICK_PADDING) + BRICK_OFFSET_Y,
+                        status: 1,
+                        width: BRICK_WIDTH,
+                        height: BRICK_HEIGHT,
+                        color: color,
+                        originalColor: color
+                    };
+                    
+                    colorIndex++; // Move to next color in sequence
+                }
+            }
+            console.log(`🌈 Created ${BRICK_COLS * BRICK_ROWS} COLLECTIVE RAINBOW bricks! (${RAINBOW_COLORS.length} colors repeated)`);
+        }
+        
+        // COLLISION DETECTION - Change to gray on hit
+        function collisionDetection() {
+            for (let c = 0; c < BRICK_COLS; c++) {
+                for (let r = 0; r < BRICK_ROWS; r++) {
+                    const b = bricks[c][r];
+                    if (b && b.status === 1) {
+                        if (ballX > b.x && ballX < b.x + b.width &&
+                            ballY > b.y && ballY < b.y + b.height) {
+                            
+                            // Change brick to destroyed gray
+                            b.color = '#666666';
+                            b.status = 0;
+                            
+                            ballVY = -ballVY;
+                            score += 10;
+                            updateScore();
+                            
+                            // 🔥 SPEED NORMALIZATION
+                            const speed = Math.sqrt(ballVX * ballVX + ballVY * ballVY);
+                            const targetSpeed = 3.5;
+                            if (speed > 0) {
+                                ballVX = (ballVX / speed) * targetSpeed;
+                                ballVY = (ballVY / speed) * targetSpeed;
+                            }
+                            
+                            // Prevent straight lines
+                            if (Math.abs(ballVX) < 0.2) {
+                                ballVX = 0.2 * (Math.random() > 0.5 ? 1 : -1);
+                            }
+                            if (Math.abs(ballVY) < 0.2) {
+                                ballVY = 0.2 * (Math.random() > 0.5 ? 1 : -1);
+                            }
+                            
+                            // Normalize again
+                            const newSpeed = Math.sqrt(ballVX * ballVX + ballVY * ballVY);
+                            if (newSpeed > 0) {
+                                ballVX = (ballVX / newSpeed) * targetSpeed;
+                                ballVY = (ballVY / newSpeed) * targetSpeed;
+                            }
+                            
+                            console.log(`🌈 Brick hit! Color changed to gray. Score: ${score}`);
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+        
+        // UPDATE GAME LOGIC
+        function updateGame() {
+            if (!gameActive || !gameRunning) return;
+            
+            // Move ball
+            ballX += ballVX;
+            ballY += ballVY;
+            
+            // Brick collision
+            collisionDetection();
+            
+            // Wall collisions
+            if (ballX + BALL_RADIUS > canvas.width || ballX - BALL_RADIUS < 0) {
+                ballVX = -ballVX;
+                const speed = Math.sqrt(ballVX * ballVX + ballVY * ballVY);
+                const targetSpeed = 3.5;
+                if (speed > 0) {
+                    ballVX = (ballVX / speed) * targetSpeed;
+                    ballVY = (ballVY / speed) * targetSpeed;
+                }
+            }
+            
+            if (ballY - BALL_RADIUS < 0) {
+                ballVY = -ballVY;
+                const speed = Math.sqrt(ballVX * ballVX + ballVY * ballVY);
+                const targetSpeed = 3.5;
+                if (speed > 0) {
+                    ballVX = (ballVX / speed) * targetSpeed;
+                    ballVY = (ballVY / speed) * targetSpeed;
+                }
+            }
+            
+            // Paddle collision
+            if (ballY + BALL_RADIUS > PADDLE_Y &&
+                ballY - BALL_RADIUS < PADDLE_Y + PADDLE_HEIGHT &&
+                ballX > paddleX && ballX < paddleX + PADDLE_WIDTH) {
+                ballY = PADDLE_Y - BALL_RADIUS;
+                ballVY = -Math.abs(ballVY);
+                const hitPos = (ballX - (paddleX + PADDLE_WIDTH/2)) / (PADDLE_WIDTH/2);
+                ballVX += hitPos * 1.5;
+                const speed = Math.sqrt(ballVX * ballVX + ballVY * ballVY);
+                const targetSpeed = 3.5;
+                if (speed > 0) {
+                    ballVX = (ballVX / speed) * targetSpeed;
+                    ballVY = (ballVY / speed) * targetSpeed;
+                }
+            }
+            
+            // Ball missed paddle
+            if (ballY + BALL_RADIUS > canvas.height) {
+                lives--;
+                updateLives();
+                if (lives <= 0) {
+                    gameRunning = false;
+                    document.getElementById('finalScoreGO').textContent = score;
+                    document.getElementById('gameOverOverlay').style.display = 'block';
+                } else {
+                    // Reset ball
+                    ballX = canvas.width / 2;
+                    ballY = canvas.height / 2;
+                    ballVX = 2.0 * (Math.random() > 0.5 ? 1 : -1);
+                    ballVY = -2.0;
+                    const speed = Math.sqrt(ballVX * ballVX + ballVY * ballVY);
+                    const targetSpeed = 3.5;
+                    if (speed > 0) {
+                        ballVX = (ballVX / speed) * targetSpeed;
+                        ballVY = (ballVY / speed) * targetSpeed;
+                    }
+                }
+            }
+            
+            // Check win condition
+            let bricksLeft = 0;
+            for (let c = 0; c < BRICK_COLS; c++) {
+                for (let r = 0; r < BRICK_ROWS; r++) {
+                    if (bricks[c] && bricks[c][r] && bricks[c][r].status === 1) {
+                        bricksLeft++;
+                    }
+                }
+            }
+            if (bricksLeft === 0 && gameRunning) {
+                gameRunning = false;
+                document.getElementById('finalScore').textContent = score;
+                document.getElementById('winOverlay').style.display = 'block';
+            }
+        }
+        
+        // DRAW EVERYTHING
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (gameActive) {
+                drawBricks();
+                drawBall();
+                drawPaddle();
+            }
+        }
+        
+        // UPDATE UI
+        function updateScore() {
+            document.getElementById('score').textContent = score;
+        }
+        function updateLives() {
+            document.getElementById('lives').textContent = lives;
+        }
+        
+        // MAIN GAME LOOP
+        function gameLoop() {
+            updateGame();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // START GAME
+        function startGame() {
+            console.log("🚀 Starting Collective Rainbow Game!");
+            updateGameConstants();
+            initBricks();
+            document.getElementById('startScreen').style.display = 'none';
+            document.getElementById('gameUI').style.display = 'flex';
+            gameActive = true;
+            gameRunning = true;
+            
+            // Reset game
+            score = 0;
+            lives = 4;
+            ballX = canvas.width / 2;
+            ballY = canvas.height / 2;
+            ballVX = 2.0 * (Math.random() > 0.5 ? 1 : -1);
+            ballVY = -2.0;
+            const speed = Math.sqrt(ballVX * ballVX + ballVY * ballVY);
+            const targetSpeed = 3.5;
+            if (speed > 0) {
+                ballVX = (ballVX / speed) * targetSpeed;
+                ballVY = (ballVY / speed) * targetSpeed;
+            }
+            
+            paddleX = (canvas.width - PADDLE_WIDTH) / 2;
+            updateScore();
+            updateLives();
+            document.getElementById('winOverlay').style.display = 'none';
+            document.getElementById('gameOverOverlay').style.display = 'none';
+        }
+        
+        // RESTART GAME
+        function restartGame() {
+            updateGameConstants();
+            initBricks();
+            gameRunning = true;
+            document.getElementById('winOverlay').style.display = 'none';
+            document.getElementById('gameOverOverlay').style.display = 'none';
+            
+            // Reset game
+            score = 0;
+            lives = 4;
+            ballX = canvas.width / 2;
+            ballY = canvas.height / 2;
+            ballVX = 2.0 * (Math.random() > 0.5 ? 1 : -1);
+            ballVY = -2.0;
+            const speed = Math.sqrt(ballVX * ballVX + ballVY * ballVY);
+            const targetSpeed = 3.5;
+            if (speed > 0) {
+                ballVX = (ballVX / speed) * targetSpeed;
+                ballVY = (ballVY / speed) * targetSpeed;
+            }
+            
+            paddleX = (canvas.width - PADDLE_WIDTH) / 2;
+            updateScore();
+            updateLives();
+        }
+        
+        // START GAME LOOP
+        initBricks();
+        updateScore();
+        updateLives();
+        gameLoop();
+        
+        // 🤖 ROBOT CONTROL - FULL-SCREEN MAPPING (-800 to -450)
+        setInterval(() => {
+            if (gameActive && gameRunning) {
+                fetch('/position')
+                    .then(res => res.json())
+                    .then(data => {
+                        let x = data.x;
+                        x = Math.max(Math.min(x, -450), -800);
+                        let paddlePos = ((x + 800) / 350) * (canvas.width - PADDLE_WIDTH);
+                        paddleX = Math.max(0, Math.min(paddlePos, canvas.width - PADDLE_WIDTH));
+                    })
+                    .catch(err => console.log('🤖 Robot:', err));
+            }
+        }, 50);
+        
+        console.log("🌈 COLLECTIVE RAINBOW GAME LOADED! Click START to begin!");
+    </script>
+</body>
+</html>
+    """
+    
+    # Write HTML file
+    with open('index.html', 'w', encoding='utf-8') as f:
+        f.write(html_content)
+    
+    print("🚀 Creating FULL-SCREEN COLLECTIVE RAINBOW Robot Breakout Game...")
+    
+    # Connect to robot
+    robot = Robot.RPC('192.168.58.2')
+    print("✅ Connected to Fairino Cobot")
+    init_ft_sensor()
+    calibrate_baseline()
+    
+    print("\n🌈 FULL-SCREEN COLLECTIVE RAINBOW ROBOT BREAKOUT GAME READY!")
+    print("📋 Instructions:")
+    print(" 1. Open: http://localhost:8000")
+    print(" 2. Click '🚀 START RAINBOW GAME 🚀'")
+    print(" 3. IMMEDIATELY see:")
+    print(" ✅ FULL SCREEN canvas")
+    print(" ✅ 🌈 10x8 = 80 BRICKS with COLLECTIVE RAINBOW")
+    print(" ✅ Multiple bricks per color = Beautiful rainbow gradient")
+    print(" ✅ ✨ WHITE GLOWING BALL")
+    print(" ✅ WHITE PADDLE (bottom)")
+    print(" 4. Hit bricks → They turn GRAY")
+    print(" 5. Control with robot pushes (-800mm to -450mm)")
+    print(" 6. Press F11 for true fullscreen")
+    
+    # Start server
+    server_thread = threading.Thread(target=start_server)
+    server_thread.daemon = True
+    server_thread.start()
+    time.sleep(2)
+    webbrowser.open('http://localhost:8000/index.html')
+    
+    try:
+        control_loop()
+    except KeyboardInterrupt:
+        shutdown(None, None)
