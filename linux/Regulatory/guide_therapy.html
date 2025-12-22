@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Active Therapy Mode</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #000000 0%, #1a3a34 50%, #2d5a4f 75%, #44b8a6 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            color: white;
+        }
+
+        .container {
+            background: rgba(50, 54, 58, 0.95);
+            padding: 2rem;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            width: 100%;
+            max-width: 600px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+            color: #f0f4f8;
+        }
+
+        h1 {
+            color: #e2e8f0;
+            margin-bottom: 1rem;
+            font-size: 1.5rem;
+        }
+
+        .range-controls {
+            display: flex;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            padding: 1rem;
+            background: rgba(30, 41, 59, 0.7);
+            border-radius: 8px;
+            border: 1px solid rgba(68, 184, 166, 0.4);
+            color: #e2e8f0;
+        }
+
+        .range-input {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        input[type="text"] {
+            padding: 0.5rem;
+            border: 1px solid #475569;
+            border-radius: 4px;
+            text-align: center;
+            width: 100px;
+            background: #1e293b;
+            color: #e2e8f0;
+        }
+
+        .set-btn {
+            padding: 0.5rem 1rem;
+            border: 1px solid rgba(68, 184, 166, 0.3);
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .set-min {
+            background: linear-gradient(135deg, #e53e3e 0%, #c53030 100%);
+            color: white;
+        }
+
+        .set-max {
+            background: linear-gradient(135deg, #38a169 0%, #2f855a 100%);
+            color: white;
+        }
+
+        /* >>>> NEW: Guide Button Style <<<< */
+        .set-guide {
+            background: linear-gradient(135deg, #9f7aea 0%, #805ad5 100%);
+            color: white;
+        }
+
+        .set-min:hover {
+            background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(229, 62, 62, 0.4);
+        }
+
+        .set-max:hover {
+            background: linear-gradient(135deg, #4cd27a 0%, #38a169 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(56, 161, 105, 0.4);
+        }
+
+        /* >>>> NEW: Guide Button Hover <<<< */
+        .set-guide:hover {
+            background: linear-gradient(135deg, #b779da 0%, #9f7aea 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(159, 122, 234, 0.4);
+        }
+
+        .mode-btn {
+            width: 100%;
+            padding: 0.75rem;
+            margin: 0.5rem 0;
+            background: linear-gradient(135deg, #9f7aea 0%, #805ad5 100%);
+            color: white;
+            border: 1px solid rgba(68, 184, 166, 0.3);
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .mode-btn:hover {
+            background: linear-gradient(135deg, #b779da 0%, #9f7aea 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(159, 122, 234, 0.5);
+        }
+
+        .calibrate-btn {
+            background: linear-gradient(135deg, #d97706 0%, #b45309 100%) !important;
+        }
+        .calibrate-btn:hover {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
+            box-shadow: 0 6px 20px rgba(217, 119, 6, 0.5);
+        }
+
+        .direction-btns {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 0.5rem;
+            margin: 1rem 0;
+        }
+
+        .direction-btn {
+            padding: 0.75rem;
+            background: linear-gradient(135deg, #2d2d2d 0%, #1a1a1a 100%);
+            color: white;
+            border: 1px solid rgba(68, 184, 166, 0.3);
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .direction-btn:hover {
+            background: linear-gradient(135deg, #44b8a6 0%, #2d9d8b 100%);
+            border-color: #44b8a6;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(68, 184, 166, 0.5);
+        }
+
+        .status {
+            padding: 0.75rem;
+            background: rgba(30, 41, 59, 0.7);
+            border-radius: 8px;
+            margin: 1rem 0;
+            text-align: left;
+            font-weight: 600;
+            color: #c7d2fe;
+            border: 1px solid rgba(68, 184, 166, 0.4);
+        }
+
+        .telemetry {
+            padding: 1rem;
+            background: rgba(30, 41, 59, 0.7);
+            border-radius: 8px;
+            margin: 1rem 0;
+            text-align: left;
+            border: 1px solid rgba(68, 184, 166, 0.4);
+        }
+
+        .telemetry h3 {
+            color: #93c5fd;
+            margin-bottom: 0.5rem;
+            font-size: 1rem;
+        }
+
+        .telemetry p {
+            margin: 0.25rem 0;
+            font-size: 0.9rem;
+            color: #e2e8f0;
+        }
+
+        .back-btn {
+            width: 100%;
+            padding: 0.75rem;
+            background: linear-gradient(135deg, #555 0%, #333 100%);
+            color: white;
+            border: 1px solid rgba(68, 184, 166, 0.3);
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            margin-top: 1rem;
+        }
+
+        .back-btn:hover {
+            background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+            border-color: #ff9800;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 152, 0, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 id="page-title">Active Therapy Mode</h1>
+
+        <!-- NEW: Calibrate Button -->
+        <button class="mode-btn calibrate-btn" onclick="calibrateBaseline()">
+            Calibrate Baseline
+        </button>
+
+        <div class="range-controls">
+            <div class="range-input">
+                <input type="text" id="min-z" value="Min Z: -- mm" readonly />
+                <button class="set-btn set-min" onclick="setLimit('min')">Set Min</button>
+            </div>
+            <!-- >>>> NEW: Guide Limit Input <<<< -->
+            <div class="range-input">
+                <input type="text" id="guide-z" value="Guide Z: -- mm" readonly />
+                <button class="set-btn set-guide" onclick="setLimit('guide')">Guide Limit</button>
+            </div>
+            <div class="range-input">
+                <input type="text" id="max-z" value="Max Z: -- mm" readonly />
+                <button class="set-btn set-max" onclick="setLimit('max')">Set Max</button>
+            </div>
+        </div>
+
+        <button class="mode-btn" id="drag-btn" onclick="toggleDragMode()">Drag Mode</button>
+
+        <div class="direction-btns">
+            <button class="direction-btn" id="start-exercise" onclick="toggleExercise()">
+                Start Exercise
+            </button>
+        </div>
+
+        <div class="status" id="status-display">Ready</div>
+
+        <div class="telemetry">
+            <h3>Real-time Telemetry</h3>
+            <p><strong>Fz Force:</strong> <span id="fz-value">0.00</span> N</p>
+            <p><strong>TCP Z Position:</strong> <span id="z-value">0.00</span> mm</p>
+            <p><strong>Max Velocity Limit:</strong> 60°/s</p>
+        </div>
+
+        <button class="back-btn" onclick="goBack()">← Back to Main Menu</button>
+    </div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const exercise = urlParams.get('exercise');
+        const mode = urlParams.get('mode') || 'Active';
+        document.getElementById('page-title').textContent = `${mode} Therapy Mode`;
+
+        let dragActive = false;
+        let exerciseRunning = false;
+
+        function callAPI(endpoint, data = null) {
+            const options = {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            };
+            if (data) options.body = JSON.stringify(data);
+            return fetch(`http://localhost:5000${endpoint}`, options);
+        }
+
+        // >>>> NEW: Calibrate function <<<<
+        function calibrateBaseline() {
+            callAPI('/calibrate')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        alert('✅ Baseline calibration complete!');
+                    } else {
+                        alert('⚠️ Calibration failed: ' + (data.message || 'Unknown'));
+                    }
+                })
+                .catch(err => {
+                    alert('❌ Calibration failed. Is robot connected?');
+                    console.error(err);
+                });
+        }
+
+        function setLimit(type) {
+            callAPI('/set_limit', { limit_type: type })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        // >>>> UPDATED: Handle 'guide' type <<<<
+                        let elId, label;
+                        if (type === 'min') {
+                            elId = 'min-z'; label = 'Min Z';
+                        } else if (type === 'max') {
+                            elId = 'max-z'; label = 'Max Z';
+                        } else if (type === 'guide') {
+                            elId = 'guide-z'; label = 'Guide Z';
+                        }
+                        document.getElementById(elId).value = `${label}: ${data.z_value.toFixed(1)} mm`;
+                        updateStatus();
+                    } else {
+                        alert('Error: ' + (data.message || 'Unknown'));
+                    }
+                })
+                .catch(err => {
+                    alert('Failed to connect to robot server. Is app.py running?');
+                    console.error(err);
+                });
+        }
+
+        function toggleDragMode() {
+            const enable = !dragActive;
+            callAPI('/drag_mode', { enable: enable })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        dragActive = data.enabled;
+                        const btn = document.getElementById('drag-btn');
+                        btn.textContent = dragActive ? 'Drag Mode (Active)' : 'Drag Mode';
+                        btn.style.background = dragActive 
+                            ? 'linear-gradient(135deg, #2ecc71 0%, #27ae60 100%)'
+                            : 'linear-gradient(135deg, #9f7aea 0%, #805ad5 100%)';
+                        document.getElementById('start-exercise').disabled = dragActive;
+                        if (dragActive && exerciseRunning) {
+                            toggleExercise();
+                        }
+                        updateStatus();
+                    }
+                })
+                .catch(err => {
+                    alert('Drag mode failed. Is robot connected?');
+                    console.error(err);
+                });
+        }
+
+        function toggleExercise() {
+            if (dragActive) {
+                alert('Disable Drag Mode first');
+                return;
+            }
+
+            const btn = document.getElementById('start-exercise');
+            if (exerciseRunning) {
+                callAPI('/stop_movement')
+                    .then(() => {
+                        exerciseRunning = false;
+                        btn.textContent = 'Start Exercise';
+                        updateStatus();
+                    });
+            } else {
+                callAPI('/start_movement')
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            exerciseRunning = true;
+                            btn.textContent = 'Stop Exercise';
+                            updateStatus();
+                        } else {
+                            alert('Failed to start: ' + (data.message || 'Check Min/Max Z'));
+                        }
+                    })
+                    .catch(err => {
+                        alert('Failed to start exercise');
+                        console.error(err);
+                    });
+            }
+        }
+
+        function goBack() {
+            callAPI('/shutdown')
+                .finally(() => {
+                    window.location.href = 'index.html';
+                });
+        }
+
+        function updateStatus() {
+            let status = 'Ready';
+            if (dragActive) status = 'Drag Mode: Active';
+            else if (exerciseRunning) status = `Running: ${exercise || 'Exercise'}`;
+            else {
+                const minSet = document.getElementById('min-z').value.includes('mm') && !document.getElementById('min-z').value.includes('--');
+                const maxSet = document.getElementById('max-z').value.includes('mm') && !document.getElementById('max-z').value.includes('--');
+                if (minSet && maxSet) status = 'Limits Set – Ready to Start';
+            }
+            document.getElementById('status-display').textContent = status;
+        }
+
+        function startTelemetry() {
+            setInterval(() => {
+                fetch('http://localhost:5000/get_telemetry')
+                    .then(res => res.json())
+                    .then(data => {
+                        document.getElementById('fz-value').textContent = data.fz.toFixed(2);
+                        document.getElementById('z-value').textContent = data.tcp_z.toFixed(2);
+                        // >>>> UPDATED: Handle 'guide' limit in telemetry <<<<
+                        if (data.z_limits) {
+                            if (data.z_limits.min !== null) {
+                                document.getElementById('min-z').value = `Min Z: ${data.z_limits.min.toFixed(1)} mm`;
+                            }
+                            if (data.z_limits.max !== null) {
+                                document.getElementById('max-z').value = `Max Z: ${data.z_limits.max.toFixed(1)} mm`;
+                            }
+                            // >>>> NEW: Update Guide Limit <<<<
+                            if (data.z_limits.guide !== null) {
+                                document.getElementById('guide-z').value = `Guide Z: ${data.z_limits.guide.toFixed(1)} mm`;
+                            }
+                        }
+                    })
+                    .catch(err => {
+                        if (!window.location.href.includes('index.html')) {
+                            console.warn('Telemetry error (server may be down)');
+                        }
+                    });
+            }, 200);
+        }
+
+        window.onload = function() {
+            startTelemetry();
+        };
+    </script>
+</body>
+</html>

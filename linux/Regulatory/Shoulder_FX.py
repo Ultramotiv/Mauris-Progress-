@@ -1,7 +1,9 @@
-# FAIRINO COBOT — PURE Z-AXIS ADMITTANCE
+# Shoulder,Hip :=  flexion and shoulder extention
+# Shoulder,Hip := Abduction and Adduction
+# COBOT — PURE Z-AXIS ADMITTANCE
 # Velocity increases smoothly with applied force → feels PERFECT
 # absolutely no vibrations | Push harder = move faster
-# Only in Z mmovement | MAX VELOCITY: 60deg/s
+# Only in Z mmovement | ****MAX VELOCITY: 60deg/s****
 
 import sys
 sys.path.append('/home/um/fairino-python-sdk-main/linux/fairino')
@@ -35,7 +37,13 @@ filtered_fz_world = 0.0
 baseline_forces = [0.0] * 6
 
 # NEW: Safe joint velocity limit
-MAX_JOINT_VELOCITY = 60.0  # deg/s (safe operating speed) Based on the Research paper read by ARchana
+MAX_JOINT_VELOCITY = 60.0  # deg/s
+
+# >>> ADDED: Z-AXIS HARD LIMITS <<<
+START_Z = None
+GOAL_Z = None
+MOVEMENT_IN_Z = 800.0  # mm (change as needed)
+# <<< END ADDED <<<
 
 # ============================================================================
 # HELPERS (unchanged)
@@ -87,18 +95,23 @@ def calibrate_baseline(samples=150):
 # ============================================================================
 def control_loop():
     global running, filtered_fz_world, desired_joint_pos, joint_velocity
-    global filtered_desired_joints, fixed_tcp_ref
-    global previous_tcp_y, previous_time
+    global filtered_desired_joints, fixed_tcp_ref, START_Z, GOAL_Z
 
     print("\n" + "="*70)
-    print("   PERFECT Z-AXIS ADMITTANCE")
-    print("   Velocity increases with force → natural & powerful feel")
-    print("   Touch gently → slow | Push hard → fast & smooth")
+    print("   PERFECT Z-AXIS ADMITTANCE WITH HARD Z-LIMITS")
+    print("   Motion only allowed between START_Z and GOAL_Z")
+    print("   Beyond limits → NO MOVEMENT, even if force is applied")
     print("="*70)
 
     err, tcp = robot.GetActualTCPPose()
     if err != 0: return
     fixed_tcp_ref = tcp.copy()
+
+    # >>> SET Z LIMITS ON START <<<
+    START_Z = tcp[2]
+    GOAL_Z = START_Z + MOVEMENT_IN_Z
+    print(f"Z Limits: {START_Z:.2f} mm ≤ Z ≤ {GOAL_Z:.2f} mm")
+    # <<< END SETTING LIMITS <<<
 
     if robot.ServoMoveStart() != 0: return
 
@@ -136,18 +149,23 @@ def control_loop():
 
             active_force = filtered_fz_world if abs(filtered_fz_world) > FORCE_THRESHOLD else 0.0
 
-            # Motion in Z direction (positive force → move +Z)            
+            # Compute desired Z movement
             delta_z = -active_force * FORCE_TO_MOTION_SCALE
-
             target_z = current_tcp[2] + delta_z
 
-            # Lock X, Z, and orientation — only Z changes
-            target_tcp = [fixed_tcp_ref[0], 
-                          fixed_tcp_ref[1], 
-                          target_z,
-                          fixed_tcp_ref[3], 
-                          fixed_tcp_ref[4], 
-                          fixed_tcp_ref[5]]
+            # >>> HARD LIMIT: CLAMP Z BETWEEN START AND GOAL <<<
+            target_z = np.clip(target_z, START_Z, GOAL_Z)
+            # <<< ROBOT CANNOT GO BEYOND THESE BOUNDARIES <<<
+
+            # Keep X, Y, and orientation fixed — only Z changes
+            target_tcp = [
+                fixed_tcp_ref[0],
+                fixed_tcp_ref[1],
+                target_z,
+                fixed_tcp_ref[3],
+                fixed_tcp_ref[4],
+                fixed_tcp_ref[5]
+            ]
 
             ik = robot.GetInverseKin(0, target_tcp, -1)
             if ik[0] != 0: 
@@ -160,17 +178,16 @@ def control_loop():
             if ik_count >= IK_TO_SERVO_RATIO:
                 avg_joints = (acc_joints / IK_TO_SERVO_RATIO).tolist()
 
-                # Apply admittance control with SAFE 60°/s joint velocity limit
+                # Apply admittance control with velocity limit
                 for j in range(6):
                     err = avg_joints[j] - desired_joint_pos[j]
                     f = err * 3.9
                     acc = (f - B[j] * joint_velocity[j]) / M[j]
                     joint_velocity[j] += acc * SERVO_UPDATE_RATE
-                    # CLAMP to safe 60°/s maximum
                     joint_velocity[j] = np.clip(joint_velocity[j], -MAX_JOINT_VELOCITY, MAX_JOINT_VELOCITY)
                     desired_joint_pos[j] += joint_velocity[j] * SERVO_UPDATE_RATE
 
-                # Smooth output
+                # Smooth joint command
                 alpha = 0.32
                 if filtered_desired_joints is None:
                     filtered_desired_joints = desired_joint_pos[:]
@@ -182,8 +199,9 @@ def control_loop():
 
                 if servo_count % 20 == 0:
                     max_jv = max(abs(v) for v in joint_velocity)
+                    error,[tcp_speed, ori_speed] = robot.GetTargetTCPCompositeSpeed(0)
                     print(f"Fz={filtered_fz_world:+6.2f}N → Z={current_tcp[2]:8.2f}mm | "
-                          f"MaxJointVel={max_jv:5.1f}°/s (LIMIT: {MAX_JOINT_VELOCITY}°/s)")
+                          f"MaxJointVel={max_jv:5.1f}°/s | " f"GetTargetTCPCompositeSpeed tcp {tcp_speed}; ori {ori_speed}")
 
                 acc_joints = None
                 ik_count = 0
@@ -219,8 +237,8 @@ if __name__ == "__main__":
     print("Connected")
     init_ft_sensor()
     calibrate_baseline()
-    print("\nSTARTING: Velocity increases with force → perfect natural feel!")
-    print("Touch gently → slow | Push hard → fast and powerful")
+    print("\nSTARTING: Z-limited admittance control")
+    print("Robot will NOT move beyond START_Z or GOAL_Z — hard limits enforced!")
     try:
         control_loop()
     except KeyboardInterrupt:

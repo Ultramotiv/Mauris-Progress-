@@ -108,8 +108,8 @@ FORCE_THRESHOLD = 2.0
 DEADBAND = 0.5
 FORCE_TO_VELOCITY_SCALE = 10.0
 UPDATE_RATE = 0.008
-M = [0.5, 0.5, 0.3, 0.5, 0.5, 0.5]  # Lower mass = more responsive
-B = [1.0, 1.0, 1.0, 1.5, 1.5, 1.5]  # Lower damping = less resistance
+M = [1.6, 1.6, 1.4, 1.8, 1.8, 1.8]           # Light mass → instant response
+B = [2.5, 2.5, 2.5, 3.0, 3.0, 3.0]   # Lower damping = less resistance
 K = [0.0]*6  # Keep zero for free motion
 # M = [3.0, 2.0, 2.0, 2.0, 2.0, 3.0] #[3.0, 3.0, 2.0, 3.0, 3.0, 3.0]
 # B = [150.0, 150.0, 150.0, 5.0, 5.0, 1.0] #[2.5, 2.5, 2.5, 3.0, 3.0, 3.0]

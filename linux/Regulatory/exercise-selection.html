@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Select Exercise</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', sans-serif;
+        }
+        body {
+            background: linear-gradient(135deg, #000000 0%, #1a3a34 50%, #2d5a4f 75%, #44b8a6 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+        }
+        .header {
+            text-align: center;
+            margin: 2rem 0 2rem 0;
+            padding: 1rem 2rem;
+            background: linear-gradient(145deg, rgba(26, 58, 52, 0.8), rgba(45, 90, 79, 0.8));
+            border-radius: 16px;
+            width: 90%;
+            max-width: 600px;
+            border: 1px solid rgba(68, 184, 166, 0.3);
+        }
+        .header h1 {
+            font-size: 1.4rem;
+            margin-bottom: 0.5rem;
+            color: white;
+        }
+        .header p {
+            color: #a0a0a0;
+            font-size: 1rem;
+        }
+        .exercise-buttons {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 15px;
+            width: 90%;
+            max-width: 600px;
+        }
+        .exercise-btn, .back-btn {
+            background: linear-gradient(135deg, #2d2d2d 0%, #1a1a1a 100%);
+            color: white;
+            border: 1px solid rgba(68, 184, 166, 0.3);
+            padding: 16px;
+            font-size: 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+            text-align: center;
+        }
+        .exercise-btn:hover, .back-btn:hover {
+            background: linear-gradient(135deg, #44b8a6 0%, #2d9d8b 100%);
+            border-color: #44b8a6;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(68, 184, 166, 0.5);
+        }
+        .back-btn {
+            margin-top: 20px;
+            background: linear-gradient(135deg, #555 0%, #333 100%);
+        }
+        .back-btn:hover {
+            background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1 id="mode-title">Select Exercise</h1>
+        <p>Choose a movement for therapy</p>
+    </div>
+
+    <div class="exercise-buttons">
+        <button class="exercise-btn" onclick="startExercise('Shoulder Flexion-Extension')">Shoulder Flexion-Extension</button>
+        <button class="exercise-btn" onclick="startExercise('Shoulder Abduction-Adduction')">Shoulder Abduction-Adduction</button>
+        <button class="exercise-btn" onclick="startExercise('Hip Flexion-Extension')">Hip Flexion-Extension</button>
+        <button class="exercise-btn" onclick="startExercise('Hip Adduction-Abduction')">Hip Adduction-Abduction</button>
+        <button class="back-btn" onclick="goBack()">← Back to Main Window</button>
+    </div>
+
+    <script>
+        // Get mode from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const mode = urlParams.get('mode');
+
+        if (mode) {
+            document.getElementById('mode-title').textContent = mode + ' Mode';
+        }
+
+        function startExercise(exercise) {
+            const urlParams = new URLSearchParams(window.location.search);
+            const mode = (urlParams.get('mode') || 'Active').trim().toLowerCase();
+
+            let targetPage;
+            switch(mode) {
+                case 'passive':
+                    targetPage = 'passive_therapy.html';
+                    break;
+                case 'guided':
+                    targetPage = 'guide_therapy.html';
+                    break;
+                case 'resisted':
+                    targetPage = 'resisted_therapy.html';
+                    break;
+                case 'active':
+                default:
+                    targetPage = 'active_therapy.html';
+                    break;
+            }
+
+            window.location.href = `${targetPage}?exercise=${encodeURIComponent(exercise)}&mode=${encodeURIComponent(mode.charAt(0).toUpperCase() + mode.slice(1))}`;
+        }
+
+        function goBack() {
+            window.location.href = 'index.html';
+        }
+    </script>
+</body>
+</html>

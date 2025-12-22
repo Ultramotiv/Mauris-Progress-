@@ -1,0 +1,233 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Active Mode</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            margin: 0; 
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .container {
+            background: white;
+            padding: 2rem;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            text-align: center;
+            max-width: 600px;
+            width: 90%;
+        }
+        h1 { 
+            color: #2c3e50; 
+            margin-bottom: 1.5rem; 
+            font-size: 2rem;
+        }
+        .btn-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-top: 20px;
+        }
+        @media (max-width: 600px) {
+            .btn-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        .control-btn {
+            background: #34495e;
+            color: white;
+            border: none;
+            padding: 15px;
+            font-size: 1rem;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-transform: capitalize;
+        }
+        .control-btn:hover {
+            background: #2c3e50;
+            transform: translateY(-2px);
+        }
+        .control-btn:active {
+            transform: translateY(0);
+        }
+        .control-btn.drag-mode {
+            grid-column: span 2;
+            background: #e74c3c;
+        }
+        .control-btn.drag-mode.active {
+            background: #2ecc71;
+        }
+        .control-btn.movement.active {
+            background: #3498db;
+        }
+        .back-btn {
+            background: #95a5a6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-top: 20px;
+            font-size: 1rem;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Active Therapy Mode</h1>
+        
+        <div class="btn-grid">
+            <button id="drag-mode" class="control-btn drag-mode" onclick="toggleDragMode()">
+                Drag Mode
+            </button>
+            
+            <button class="control-btn movement" onclick="startMovement('Shoulder_flexion')">
+                Shoulder Flexion
+            </button>
+            <button class="control-btn movement" onclick="startMovement('Shoulder_extention')">
+                Shoulder Extension
+            </button>
+            <button class="control-btn movement" onclick="startMovement('Hip_Flexion')">
+                Hip Flexion
+            </button>
+            <button class="control-btn movement" onclick="startMovement('Hip_Extention')">
+                Hip Extension
+            </button>
+            <button class="control-btn movement" onclick="startMovement('Minimum_Limit')">
+                Minimum Limit
+            </button>
+            <button class="control-btn movement" onclick="startMovement('Max_limit')">
+                Max Limit
+            </button>
+        </div>
+        
+        <div class="status" id="status">Ready</div>
+        
+        <button class="back-btn" onclick="window.location.href='/'">Back to Main Menu</button>
+    </div>
+
+    <script>
+        let dragModeActive = false;
+        let activeMovement = null;
+        
+        function toggleDragMode() {
+            const btn = document.getElementById('drag-mode');
+            dragModeActive = !dragModeActive;
+            
+            fetch('/drag_mode', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if(data.status === 'success') {
+                    btn.classList.toggle('active', data.enabled);
+                    document.getElementById('status').textContent = 
+                        data.enabled ? 'Drag mode: ACTIVE' : 'Drag mode: INACTIVE';
+                        
+                    // Disable movement buttons when drag mode is active
+                    document.querySelectorAll('.movement').forEach(btn => {
+                        btn.disabled = data.enabled;
+                        if(data.enabled) btn.classList.remove('active');
+                    });
+                } else {
+                    console.error('Error:', data.message);
+                    document.getElementById('status').textContent = 'Error: ' + data.message;
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById('status').textContent = 'Network error';
+            });
+        }
+        
+        function startMovement(movement) {
+            // If drag mode is active, ignore
+            if(dragModeActive) return;
+            
+            // Reset all movement buttons
+            document.querySelectorAll('.movement').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Set current movement as active
+            event.target.classList.add('active');
+            activeMovement = movement;
+            
+            // Stop any previous movement
+            if(activeMovement) {
+                fetch('/stop_movement', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({movement: activeMovement})
+                });
+            }
+            
+            // Start new movement
+            fetch('/start_movement', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({movement: movement})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if(data.status === 'success') {
+                    document.getElementById('status').textContent = 
+                        'Active movement: ' + movement.replace('_', ' ');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById('status').textContent = 'Network error';
+            });
+        }
+        
+        // Initialize button states on page load
+        window.onload = function() {
+            fetch('/get_state')
+            .then(response => response.json())
+            .then(data => {
+                dragModeActive = data.drag_mode_enabled;
+                document.getElementById('drag-mode').classList.toggle('active', dragModeActive);
+                
+                // Set movement button states
+                for(const [movement, active] of Object.entries(data.active_movements)) {
+                    if(active) {
+                        const btn = document.querySelector(`[onclick="startMovement('${movement}')"]`);
+                        if(btn) btn.classList.add('active');
+                    }
+                }
+                
+                // Update status
+                if(dragModeActive) {
+                    document.getElementById('status').textContent = 'Drag mode: ACTIVE';
+                } else {
+                    const activeMov = Object.entries(data.active_movements).find(([k, v]) => v);
+                    if(activeMov) {
+                        document.getElementById('status').textContent = 
+                            'Active movement: ' + activeMov[0].replace('_', ' ');
+                    }
+                }
+            });
+        };
+    </script>
+</body>
+</html>
+    

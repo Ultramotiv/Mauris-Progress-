@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Robot-Controlled Maze Game</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      background: linear-gradient(135deg, #0f172a, #1e1b4b, #312e81, #4c1d95);
+      background-size: 400% 400%;
+      animation: gradientShift 15s ease infinite;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      position: relative;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+    }
+    body::before {
+      content: '';
+      position: absolute;
+      width: 150%;
+      height: 150%;
+      background: radial-gradient(circle at 20% 50%, rgba(139, 92, 246, 0.15) 0%, transparent 50%),
+                  radial-gradient(circle at 80% 80%, rgba(59, 130, 246, 0.15) 0%, transparent 50%);
+      animation: float 20s ease-in-out infinite;
+      z-index: -1;
+    }
+    @keyframes gradientShift {
+      0%, 100% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+    }
+    @keyframes float {
+      0%, 100% { transform: translate(0, 0) rotate(0deg); }
+      33% { transform: translate(30px, -30px) rotate(5deg); }
+      66% { transform: translate(-20px, 20px) rotate(-5deg); }
+    }
+    
+    /* Full-screen game container */
+    .game-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      padding: 15px;
+      gap: 10px;
+    }
+    
+    /* Header with title and status */
+    .header {
+      text-align: center;
+      z-index: 10;
+    }
+    .title {
+      font-size: 2.2rem;
+      margin-bottom: 10px;
+      background: linear-gradient(135deg, #fbbf24, #f97316, #f59e0b);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      font-weight: 900;
+      text-shadow: 0 0 20px rgba(251, 191, 36, 0.4);
+      letter-spacing: -1px;
+    }
+    
+    .status-bar {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .status-box {
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      transition: all 0.3s ease;
+    }
+    .status.error { color: #f87171; background: rgba(127, 29, 29, 0.3); }
+    .status.connected { color: #6ee7b7; background: rgba(22, 101, 52, 0.3); }
+    .status.connecting { color: #fcd34d; background: rgba(113, 63, 18, 0.3); }
+    
+    .robot-data {
+      display: flex;
+      justify-content: center;
+      gap: 15px;
+      margin-bottom: 10px;
+    }
+    .data-item {
+      background: rgba(0, 0, 0, 0.25);
+      color: rgba(255, 255, 255, 0.9);
+      padding: 8px 15px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      text-align: center;
+      min-width: 120px;
+    }
+    
+    .timer-value {
+      font-size: 1.8rem;
+      font-family: 'Courier New', monospace;
+      font-weight: bold;
+      color: white;
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.4), rgba(139, 92, 246, 0.4));
+      padding: 10px 25px;
+      border-radius: 12px;
+      display: inline-block;
+      box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      letter-spacing: 2px;
+    }
+    
+    /* Main maze area */
+    .maze-area {
+      position: relative;
+      overflow: hidden;
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      background: rgba(0, 0, 0, 0.3);
+    }
+    .maze {
+      display: grid;
+      width: 100%;
+      height: 100%;
+      gap: 0.5px;
+    }
+    .cell {
+      background: rgba(209, 213, 219, 0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0;
+      transition: all 0.15s ease;
+    }
+    .wall {
+      background: linear-gradient(145deg, #2d3748, #1a202c);
+      border: 1px solid rgba(156, 163, 175, 0.2);
+      box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.3);
+    }
+    .ball {
+      background: linear-gradient(135deg, #ef4444, #dc2626, #b91c1c);
+      border-radius: 50%;
+      animation: pulse 1.5s infinite;
+      box-shadow: 0 0 15px rgba(239, 68, 68, 0.7);
+      width: 80%;
+      height: 80%;
+    }
+    .finish {
+      background: linear-gradient(135deg, #22c55e, #16a34a, #047857);
+      border-radius: 50%;
+      box-shadow: 0 0 15px rgba(34, 197, 94, 0.7);
+      animation: finishPulse 2s ease-in-out infinite;
+      width: 70%;
+      height: 70%;
+    }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7), 0 0 15px rgba(239, 68, 68, 0.6); }
+      70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0), 0 0 15px rgba(239, 68, 68, 0.6); }
+      100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0), 0 0 15px rgba(239, 68, 68, 0.6); }
+    }
+    @keyframes finishPulse {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 15px rgba(34, 197, 94, 0.7); }
+      50% { transform: scale(1.1); box-shadow: 0 0 25px rgba(34, 197, 94, 0.9); }
+    }
+    
+    /* Footer with controls */
+    .footer {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 10;
+    }
+    .instructions {
+      text-align: center;
+      color: rgba(255, 255, 255, 0.85);
+      font-size: 0.9rem;
+      line-height: 1.3;
+    }
+    .reset-btn {
+      padding: 12px;
+      font-size: 1.1rem;
+      font-weight: bold;
+      color: white;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6, #a855f7);
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+    }
+    .reset-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(59, 130, 246, 0.6);
+      background: linear-gradient(135deg, #2563eb, #7c3aed, #9333ea);
+    }
+    .api-info {
+      text-align: center;
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 0.8rem;
+    }
+    
+    /* Victory message */
+    .message {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: linear-gradient(135deg, #22c55e, #16a34a, #059669);
+      color: white;
+      padding: 15px 25px;
+      border-radius: 14px;
+      font-weight: bold;
+      font-size: 1.2rem;
+      box-shadow: 0 8px 30px rgba(34, 197, 94, 0.6);
+      text-align: center;
+      z-index: 100;
+      display: none;
+    }
+    
+    /* Warning text */
+    .warning {
+      color: #fcd34d;
+      text-align: center;
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="game-container">
+    <div class="header">
+      <h1 class="title">Robot-Controlled Maze Game</h1>
+      
+      <div class="timer-value" id="timer">00:00</div>
+      
+      <div class="status-bar">
+        <div class="status-box status connecting" id="status">Connecting to Robot...</div>
+      </div>
+      
+      <div class="robot-data" id="robotData" style="display: none;">
+        <div class="data-item">
+          <div>J4: <span id="j4Value">0.00</span>°</div>
+          <div style="font-size: 0.75rem; opacity: 0.7;">-205° to -66°</div>
+        </div>
+        <div class="data-item">
+          <div>J5: <span id="j5Value">0.00</span>°</div>
+          <div style="font-size: 0.75rem; opacity: 0.7;">60° to 120°</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="maze-area">
+      <div class="maze" id="maze"></div>
+      <div class="message" id="gameMessage"></div>
+    </div>
+    
+    <div class="footer">
+      <div class="instructions">
+        <p><strong>J4</strong>: -205°=Left, -140°=Center, -66°=Right</p>
+        <p><strong>J5</strong>: 60°=Down, 90°=Center, 120°=Up</p>
+      </div>
+      
+      <button class="reset-btn" id="resetBtn">Reset Game</button>
+      
+      <div class="api-info">
+        <p>API: http://localhost:8080</p>
+        <p class="warning" id="connectionWarning" style="display: none;">Waiting for robot connection...</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // FIXED MAZE: Fully connected with vertical passages
+    const initialMaze = [
+      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+      [1,2,0,0,0,0,0,1,0,0,0,0,0,0,1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1],
+      [1,0,1,1,1,1,0,1,0,1,1,1,1,0,1,0,1,1,1,1,0,1,0,1,1,1,1,1,0,1],
+      [1,0,0,0,0,1,0,1,0,0,0,0,1,0,1,0,1,0,0,1,0,1,0,0,0,0,0,1,0,1],
+      [1,1,1,1,0,1,0,1,1,1,1,0,1,0,1,0,1,0,1,1,0,1,1,1,1,0,1,0,1,1],
+      [1,0,0,0,0,1,0,0,0,0,1,0,1,0,1,0,0,0,1,0,0,0,0,0,0,0,1,0,0,1],
+      [1,0,1,1,1,1,1,1,1,0,1,0,1,0,1,1,1,1,1,0,1,1,1,1,0,1,1,1,0,1],
+      [1,0,1,0,0,0,0,0,1,0,1,0,1,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,1],
+      [1,0,1,0,1,1,1,0,1,0,1,0,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,0,1],
+      [1,0,1,0,1,0,1,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,1,0,1],
+      [1,0,1,0,1,0,1,0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,0,1,0,1],
+      [1,0,1,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,1,0,1],
+      [1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,0,1],
+      [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+      [1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1], // Open at col 7 and 21
+      [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+      [1,0,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], // Open at col 7
+      [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+      [1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], // Open at col 7
+      [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+      [1,0,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], // Open at col 7
+      [1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+      [1,0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1],
+      [1,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1],
+      [1,0,1,0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,1],
+      [1,0,1,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,1],
+      [1,0,1,0,1,0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,1,0,1],
+      [1,0,0,0,1,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1,0,1],
+      [1,0,1,0,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,3,1],
+      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+    ];
+
+    // Game state
+    let ballPosition = { row: 1, col: 1 };
+    let time = 0;
+    let gameWon = false;
+    let gameStarted = false;
+    let robotData = { j4: 0, j5: 0, connected: false };
+    let timerInterval = null;
+    let apiPollInterval = null;
+
+    // DOM elements
+    const mazeEl = document.getElementById('maze');
+    const timerEl = document.getElementById('timer');
+    const statusEl = document.getElementById('status');
+    const robotDataEl = document.getElementById('robotData');
+    const j4ValueEl = document.getElementById('j4Value');
+    const j5ValueEl = document.getElementById('j5Value');
+    const gameMessageEl = document.getElementById('gameMessage');
+    const resetBtn = document.getElementById('resetBtn');
+    const connectionWarningEl = document.getElementById('connectionWarning');
+
+    // Initialize maze with dynamic sizing
+    function renderMaze() {
+      mazeEl.innerHTML = '';
+      mazeEl.style.gridTemplateColumns = `repeat(${initialMaze[0].length}, 1fr)`;
+      mazeEl.style.gridTemplateRows = `repeat(${initialMaze.length}, 1fr)`;
+      
+      initialMaze.forEach((row, rowIndex) => {
+        row.forEach((cell, colIndex) => {
+          const cellEl = document.createElement('div');
+          cellEl.className = 'cell';
+          
+          if (cell === 1) {
+            cellEl.classList.add('wall');
+          } else if (rowIndex === ballPosition.row && colIndex === ballPosition.col) {
+            cellEl.classList.add('ball');
+          } else if (cell === 3) {
+            cellEl.classList.add('finish');
+          } else if (cell === 2) {
+            // Start position
+          } else {
+            cellEl.classList.add('path');
+          }
+          
+          mazeEl.appendChild(cellEl);
+        });
+      });
+    }
+
+    // Format time
+    function formatTime(seconds) {
+      const mins = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    // Update timer
+    function startTimer() {
+      if (timerInterval) return;
+      timerInterval = setInterval(() => {
+        time++;
+        timerEl.textContent = formatTime(time);
+      }, 1000);
+    }
+
+    // Stop timer
+    function stopTimer() {
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+      }
+    }
+
+    // Move ball
+    function moveBall(deltaRow, deltaCol) {
+      if (gameWon) return;
+      
+      const newRow = ballPosition.row + deltaRow;
+      const newCol = ballPosition.col + deltaCol;
+      
+      // Validate move
+      if (
+        newRow >= 0 && newRow < initialMaze.length &&
+        newCol >= 0 && newCol < initialMaze[0].length &&
+        initialMaze[newRow][newCol] !== 1
+      ) {
+        ballPosition = { row: newRow, col: newCol };
+        renderMaze();
+        
+        // Check win
+        if (initialMaze[newRow][newCol] === 3) {
+          gameWon = true;
+          stopTimer();
+          gameMessageEl.textContent = `Congratulations! Completed in ${formatTime(time)}`;
+          gameMessageEl.style.display = 'block';
+        }
+      }
+    }
+
+    // Process robot data with CORRECTED joint mapping
+    function processRobotData() {
+      if (gameWon || !robotData.connected) return;
+      
+      if (!gameStarted) {
+        gameStarted = true;
+        startTimer();
+      }
+      
+      const { j4, j5 } = robotData;
+      
+      // J4 Mapping (HORIZONTAL) - FIXED REVERSED DIRECTION
+      // -205° = LEFT (physically), but if screen motion was reversed, we swap:
+      if (j4 < -145) {
+        moveBall(0, 1);  // Move RIGHT on screen (was -1)
+      } else if (j4 > -135) {
+        moveBall(0, -1); // Move LEFT on screen (was +1)
+      }
+      
+      // J5 Mapping (VERTICAL) - unchanged (assuming correct)
+      if (j5 > 95) {
+        moveBall(-1, 0); // Move UP
+      } else if (j5 < 85) {
+        moveBall(1, 0);  // Move DOWN
+      }
+    }
+
+    // Fetch robot data
+    async function fetchRobotData() {
+      try {
+        const response = await fetch('http://localhost:8080/robot_data');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        robotData = {
+          j4: data.j4,
+          j5: data.j5,
+          connected: data.connected
+        };
+        
+        // Update UI
+        j4ValueEl.textContent = data.j4.toFixed(2);
+        j5ValueEl.textContent = data.j5.toFixed(2);
+        
+        if (data.connected) {
+          statusEl.innerHTML = 'Robot Connected ✓';
+          statusEl.className = 'status-box status connected';
+          robotDataEl.style.display = 'flex';
+          connectionWarningEl.style.display = 'none';
+        } else {
+          statusEl.innerHTML = 'Connecting to Robot...';
+          statusEl.className = 'status-box status connecting';
+          robotDataEl.style.display = 'none';
+          connectionWarningEl.style.display = 'block';
+        }
+        
+        processRobotData();
+      } catch (error) {
+        console.error('API Error:', error);
+        robotData = { j4: 0, j5: 0, connected: false };
+        statusEl.innerHTML = `API Error: ${error.message}`;
+        statusEl.className = 'status-box status error';
+        robotDataEl.style.display = 'none';
+        connectionWarningEl.style.display = 'block';
+      }
+    }
+
+    // Reset game
+    function resetGame() {
+      ballPosition = { row: 1, col: 1 };
+      time = 0;
+      gameWon = false;
+      gameStarted = false;
+      timerEl.textContent = '00:00';
+      gameMessageEl.style.display = 'none';
+      stopTimer();
+      renderMaze();
+    }
+
+    // Initialize
+    renderMaze();
+    resetBtn.addEventListener('click', resetGame);
+    
+    // Start polling
+    fetchRobotData();
+    apiPollInterval = setInterval(fetchRobotData, 100);
+    
+    // Handle window resize
+    window.addEventListener('resize', renderMaze);
+  </script>
+</body>
+</html>
