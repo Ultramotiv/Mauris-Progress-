@@ -1,3 +1,5 @@
+# recorded trajetory for the code 
+
 import sys
 sys.path.append('/home/um/fairino-python-sdk-main/linux/fairino')
 import Robot

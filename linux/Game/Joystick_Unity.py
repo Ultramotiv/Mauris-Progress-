@@ -16,7 +16,7 @@ M = [1.8, 1.8, 1.8, 1.0, 1.0, 1.8]
 B = [2.0, 2.0, 2.0, 2.5, 2.5, 2.0]
 K = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
-JOINT4_MIN, JOINT4_MAX = -205.0, -66.0
+JOINT4_MIN, JOINT4_MAX = -205.0, -66.0 # these are parameters decide by archana! 
 JOINT5_MIN, JOINT5_MAX = 60.0, 120.0
 MAX_SPEED_DEG_S = 70.0
 force_to_deg = 4.0

@@ -19,7 +19,7 @@ running = True
 fixed_tcp_ref = None
 
 # THESE ARE THE ONLY CHANGES YOU NEED — COPY THIS BLOCK
-FORCE_TO_MOTION_SCALE = 10.0
+FORCE_TO_MOTION_SCALE = 10.0   # changed from 6 to 10
 M = [1.6, 1.6, 1.4, 1.8, 1.8, 1.8]           # Light mass → instant response
 B = [2.5, 2.5, 2.5, 3.0, 3.0, 3.0]     # Damping per joint
 IK_TO_SERVO_RATIO = 2                         # Smoother than 4
