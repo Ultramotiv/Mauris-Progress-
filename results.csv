@@ -26,4 +26,11 @@ Timestamp,Exercise,Side,Name,Age,Gender,Diagnosis,Mode,Peak_Force_N,Average_Forc
 2025-12-16 11:49:01,Shoulder Flexion,Left,Archana,26,Female,16thDec,Isometric,75.94,64.78,37.14,4.911,22
 2025-12-16 11:49:01,Shoulder Flexion,Right,Archana,26,Female,16thDec,Isometric,42.84,33.08,34.21,1.381,25
 2025-12-16 11:49:01,Shoulder Flexion,Left,Archana,26,Female,16thDec,Isometric,75.94,64.78,37.14,4.911,22
-2025-12-16 11:49:01,Shoulder Flexion,Right,Archana,26,Female,16thDec,Isometric,42.84,33.08,34.21,1.381,25
+2026-01-27 16:24:41,Ankle Plantarflexion,Left,,,,,Isometric,11.25,6.23,0,0.946,44
+2026-01-27 16:24:41,Ankle Plantarflexion,Right,,,,,Isometric,21.35,14,0,0.808,68
+2026-01-27 16:25:23,Shoulder Flexion,Left,Ashu,26,Male,trial1,Isometric,6.05,2.18,0,0.862,10
+2026-01-27 16:25:23,Shoulder Flexion,Right,Ashu,26,Male,trial1,Isometric,5.05,3.41,0,0.672,13
+2026-01-27 16:26:42,Shoulder Abduction,Left,Ashu,26,Male,trial1,Isometric,40.05,31.11,18.75,2.056,-31
+2026-01-27 16:26:42,Shoulder Abduction,Right,Ashu,26,Male,trial1,Isometric,69.85,47.7,7.55,2.544,95
+2026-02-09 14:57:08,Shoulder Flexion,Left,Babras,25,Male,Frozen shoulder,Isometric,25.66,20.73,1.66,0.749,89
+2026-02-09 14:57:08,Shoulder Flexion,Right,Babras,25,Male,Frozen shoulder,Isometric,27.96,19.59,8.56,0.35,84

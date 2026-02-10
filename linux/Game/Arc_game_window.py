@@ -2,7 +2,7 @@
 # FAIRINO ROBOT - ULTRA SMOOTH CONTROL WITH WINDOW CLEANING GAME
 # → 1 Lap = +90° → -90° → back to +90° (round trip)
 # → Switches IMMEDIATELY after ONE full lap
-# → MAX JOINT VELOCITY: 60°/sec (buttery smooth)
+# → MAX JOINT VELOCITY: 60°/sec
 # → Web-based game shows robot cleaning a dusty window!
 # =====================================================================
 # CHANGE ONLY THESE 3 LINES
@@ -33,7 +33,7 @@ FILTER_ALPHA = 0.12
 DEADZONE = [4.0, 4.0, 4.5, 2.5, 2.5, 2.5]
 FORCE_THRESHOLD = 1.5
 MAX_STEP = 1.2
-MAX_JOINT_VEL_DEG = 60.0
+MAX_JOINT_VEL_DEG = 30.0
 
 VELOCITY_SMOOTHING = 0.82
 POSITION_SMOOTHING = 0.28

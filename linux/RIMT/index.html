@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Robot Rehabilitation Dashboard</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+background: #0c2d29;
+padding: 40px;
+overflow-y: auto;
+min-height: 100vh;
+}
+.container { max-width: 1400px; margin: 0 auto; }
+.header {
+background: rgba(255, 255, 255, 0.15);
+padding: 40px;
+text-align: center;
+margin-bottom: 30px;
+border-radius: 8px;
+backdrop-filter: blur(10px);
+}
+.header h1 {
+color: white;
+font-size: 28px;
+font-weight: bold;
+margin-bottom: 8px;
+}
+.header p { color: rgba(255, 255, 255, 0.9); font-size: 12px; }
+.card {
+background: rgba(255, 255, 255, 0.12);
+backdrop-filter: blur(10px);
+border-radius: 8px;
+box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+margin-bottom: 25px;
+padding: 30px;
+border: 1px solid rgba(255, 255, 255, 0.18);
+transition: all 0.4s ease;
+}
+.card:hover {
+transform: translateY(-8px) scale(1.02);
+box-shadow: 0 12px 24px rgba(0, 0, 0, 0.25);
+background: rgba(255, 255, 255, 0.18);
+border: 1px solid rgba(255, 255, 255, 0.3);
+}
+.top-row {
+display: grid;
+grid-template-columns: 1fr 1fr;
+gap: 25px;
+margin-bottom: 25px;
+}
+@media (max-width: 1100px) {
+.exercise-two-col {
+grid-template-columns: 1fr;
+gap: 30px;
+}
+.sides-container {
+gap: 30px;
+}
+}
+.card-title {
+display: flex;
+align-items: center;
+margin-bottom: 20px;
+}
+.card-title .bullet {
+color: white;
+font-size: 24px;
+margin-right: 10px;
+}
+.card-title h2 {
+color: white;
+font-size: 22px;
+font-weight: bold;
+}
+.separator {
+height: 2px;
+background: rgba(255, 255, 255, 0.2);
+margin-bottom: 20px;
+}
+.status-box {
+background: rgba(255, 255, 255, 0.1);
+border: 1px solid rgba(255, 255, 255, 0.2);
+border-radius: 6px;
+padding: 15px 20px;
+margin-bottom: 20px;
+display: flex;
+align-items: center;
+}
+.status-indicator {
+font-size: 32px;
+margin-right: 15px;
+}
+.status-indicator.disconnected { color: #e74c3c; }
+.status-indicator.active { color: #2ecc71; }
+.status-indicator.connecting { color: #f39c12; }
+.status-text h3 {
+color: white;
+font-size: 14px;
+font-weight: bold;
+margin-bottom: 3px;
+}
+.status-text p { color: rgba(255, 255, 255, 0.8); font-size: 11px; }
+.button-row {
+display: flex;
+gap: 15px;
+margin-top: 10px;
+}
+.btn {
+padding: 15px 35px;
+border: none;
+border-radius: 6px;
+font-size: 13px;
+font-weight: bold;
+color: white;
+cursor: pointer;
+transition: all 0.3s;
+}
+.btn-primary { background: rgba(255, 255, 255, 0.25); }
+.btn-primary:hover { background: rgba(255, 255, 255, 0.35); }
+.btn-primary:disabled { background: rgba(255, 255, 255, 0.1); cursor: not-allowed; opacity: 0.5; }
+.btn-secondary { background: rgba(255, 255, 255, 0.25); }
+.btn-secondary:hover { background: rgba(255, 255, 255, 0.35); }
+.btn-danger { background: rgba(231, 76, 60, 0.8); }
+.btn-danger:hover { background: rgba(192, 57, 43, 0.9); }
+.form-row {
+display: flex;
+align-items: center;
+margin-bottom: 10px;
+gap: 20px;
+}
+.form-row label {
+color: white;
+font-weight: bold;
+font-size: 12px;
+min-width: 120px;
+}
+.form-row input, .form-row select {
+flex: 1;
+padding: 10px 12px;
+background: rgba(255, 255, 255, 0.15);
+border: 1px solid rgba(255, 255, 255, 0.25);
+border-radius: 4px;
+font-size: 11px;
+color: white;
+}
+.form-row input::placeholder {
+color: rgba(255, 255, 255, 0.6);
+}
+.form-row select option {
+background: #3a9d8f;
+color: white;
+}
+.exercise-grid {
+display: grid;
+grid-template-columns: repeat(3, 1fr);
+gap: 10px;
+margin-top: 20px;
+}
+.exercise-btn {
+padding: 25px 20px;
+border: none;
+border-radius: 6px;
+color: white;
+font-weight: bold;
+font-size: 12px;
+cursor: pointer;
+transition: all 0.3s;
+text-align: center;
+}
+.exercise-btn:hover {
+transform: translateY(-2px);
+box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+}
+.upper-btn { background: #3498db; }
+.upper-btn:hover { background: #2980b9; }
+.lower-btn { background: #e67e22; }
+.lower-btn:hover { background: #d87018; }
+.notification {
+position: fixed;
+top: 20px;
+right: 20px;
+padding: 15px 25px;
+background: white;
+border-radius: 6px;
+box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+z-index: 1000;
+display: none;
+animation: slideIn 0.3s ease;
+}
+@keyframes slideIn {
+from { transform: translateX(400px); opacity: 0; }
+to { transform: translateX(0); opacity: 1; }
+}
+.notification.success { border-left: 4px solid #27ae60; }
+.notification.error { border-left: 4px solid #e74c3c; }
+.notification.info { border-left: 4px solid #3498db; }
+/* Side-by-Side Layout - NOW VERTICAL */
+/* Left & Right cards stacked vertically */
+.sides-container {
+display: flex;
+flex-direction: column;
+gap: 40px;
+width: 100%;
+}
+.side-section {
+width: 100% !important;
+max-width: none !important;
+background: rgba(255, 255, 255, 0.09);
+border: 1px solid rgba(255, 255, 255, 0.25);
+border-radius: 16px;
+padding: 30px;
+}
+</style>
+</head>
+<body>
+<!-- Main Dashboard -->
+<div class="container" id="mainDashboard">
+<div class="header">
+<h1>ROBOTIC ISOMETRIC MUSCLE TESTING</h1>
+<p>Advanced Drag Mode Control & Exercise Management</p>
+</div>
+<div class="top-row">
+<div class="card">
+<div class="card-title">
+<span class="bullet">●</span>
+<h2> Robot Connection </h2>
+</div>
+<div class="separator"></div>
+<div class="status-box">
+<div class="status-indicator connecting" id="statusIndicator">●</div>
+<div class="status-text">
+<h3 id="statusTitle">Status: Connecting...</h3>
+<p id="statusMessage">Establishing connection to robot</p>
+</div>
+</div>
+<div class="button-row">
+<button class="btn btn-secondary" onclick="showProgressReport()">Progress Report</button>
+</div>
+</div>
+<div class="card">
+<div class="card-title">
+<span class="bullet">●</span>
+<h2>Patient Information</h2>
+</div>
+<div class="separator"></div>
+<div class="form-row">
+<label>Full Name:</label>
+<input type="text" id="patientName" placeholder="Enter patient name" onchange="savePatientData()">
+</div>
+<div class="form-row">
+<label>Age:</label>
+<input type="text" id="patientAge" placeholder="Enter age" onchange="savePatientData()">
+</div>
+<div class="form-row">
+<label>Gender:</label>
+<select id="patientGender" onchange="savePatientData()">
+<option value="">Select gender</option>
+<option value="Male">Male</option>
+<option value="Female">Female</option>
+<option value="Other">Other</option>
+</select>
+</div>
+<div class="form-row">
+<label>Diagnosis:</label>
+<input type="text" id="patientDiagnosis" placeholder="Enter diagnosis" onchange="savePatientData()">
+</div>
+</div>
+</div>
+<div class="card exercise-card">
+<div class="card-title">
+<span class="bullet">●</span>
+<h2>Upper Limb Exercises</h2>
+</div>
+<div class="separator"></div>
+<div class="exercise-grid">
+<button class="exercise-btn upper-btn" onclick="startExercise('Shoulder Flexion')">Shoulder Flexion</button>
+<button class="exercise-btn upper-btn" onclick="startExercise('Shoulder Extension')">Shoulder Extension</button>
+<button class="exercise-btn upper-btn" onclick="startExercise('Shoulder Abduction')">Shoulder Abduction</button>
+<button class="exercise-btn upper-btn" onclick="startExercise('Shoulder Adduction')">Shoulder Adduction</button>
+<button class="exercise-btn upper-btn" onclick="startExercise('Elbow Flexion')">Elbow Flexion</button>
+<button class="exercise-btn upper-btn" onclick="startExercise('Elbow Extension')">Elbow Extension</button>
+<button class="exercise-btn upper-btn" onclick="startExercise('Wrist Flexion')">Wrist Flexion</button>
+<button class="exercise-btn upper-btn" onclick="startExercise('Wrist Extension')">Wrist Extension</button>
+</div>
+</div>
+<div class="card exercise-card lower">
+<div class="card-title">
+<span class="bullet">●</span>
+<h2>Lower Limb Exercises</h2>
+</div>
+<div class="separator"></div>
+<div class="exercise-grid">
+<button class="exercise-btn lower-btn" onclick="startExercise('Hip Flexion')">Hip Flexion</button>
+<button class="exercise-btn lower-btn" onclick="startExercise('Hip Extension')">Hip Extension</button>
+<button class="exercise-btn lower-btn" onclick="startExercise('Hip Abduction')">Hip Abduction</button>
+<button class="exercise-btn lower-btn" onclick="startExercise('Hip Adduction')">Hip Adduction</button>
+<button class="exercise-btn lower-btn" onclick="startExercise('Ankle Plantarflexion')">Ankle Plantarflexion</button>
+<button class="exercise-btn lower-btn" onclick="startExercise('Ankle Dorsiflexion')">Ankle Dorsiflexion</button>
+<button class="exercise-btn lower-btn" onclick="startExercise('Knee_extention')">Knee_extention</button>
+<button class="exercise-btn lower-btn" onclick="startExercise('Knee_flexion')">Knee_flexion</button>
+</div>
+</div>
+</div>
+
+<div class="notification" id="notification"></div>
+
+<script>
+const API_BASE = '/api'; // Assumes served from same origin as Flask
+
+// Utility: Show notification
+function showNotification(message, type) {
+  const n = document.getElementById('notification');
+  n.textContent = message;
+  n.className = `notification ${type}`;
+  n.style.display = 'block';
+  setTimeout(() => n.style.display = 'none', 3000);
+}
+
+// Save patient data to backend
+async function savePatientData() {
+  const data = {
+    name: document.getElementById('patientName').value,
+    age: document.getElementById('patientAge').value,
+    gender: document.getElementById('patientGender').value,
+    diagnosis: document.getElementById('patientDiagnosis').value
+  };
+  try {
+    const res = await fetch(`${API_BASE}/patient`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (res.ok) {
+      showNotification('Patient data saved', 'success');
+    } else {
+      showNotification('Failed to save patient data', 'error');
+    }
+  } catch (err) {
+    showNotification('Network error', 'error');
+  }
+}
+
+// Start exercise via backend
+async function startExercise(exerciseName) {
+    // Optional: notify backend exercise is starting
+    try {
+        await fetch('/api/exercise/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ exercise_name: exerciseName })
+        });
+    } catch (e) {
+        console.warn('Failed to notify backend:', e);
+    }
+    // Navigate to exercise page — this loads exercise_page.html
+    window.location.href = `/exercise_page.html?exercise=${encodeURIComponent(exerciseName)}&mode=Active`;
+}
+
+// Go to progress report
+function showProgressReport() {
+  window.location.href = 'progress_report.html';
+}
+
+// Optional: Auto-load patient data on page load
+window.addEventListener('load', async () => {
+  try {
+    const res = await fetch(`${API_BASE}/patient`);
+    if (res.ok) {
+      const data = await res.json();
+      document.getElementById('patientName').value = data.name || '';
+      document.getElementById('patientAge').value = data.age || '';
+      document.getElementById('patientGender').value = data.gender || '';
+      document.getElementById('patientDiagnosis').value = data.diagnosis || '';
+    }
+  } catch (err) {
+    console.warn('Could not load patient data');
+  }
+
+  // Optional: Poll robot status
+  async function updateStatus() {
+    try {
+      const res = await fetch(`${API_BASE}/status`);
+      if (res.ok) {
+        const status = await res.json();
+        const indicator = document.getElementById('statusIndicator');
+        const title = document.getElementById('statusTitle');
+        const msg = document.getElementById('statusMessage');
+        if (status.drag_mode_active) {
+          indicator.className = 'status-indicator active';
+          title.textContent = 'Status: Active';
+          msg.textContent = 'Free-drive mode enabled';
+        } else if (status.connected) {
+          indicator.className = 'status-indicator active';
+          title.textContent = 'Status: Connected';
+          msg.textContent = 'Robot connected';
+        } else {
+          indicator.className = 'status-indicator connecting';
+          title.textContent = 'Status: Connecting...';
+          msg.textContent = 'Attempting to connect to robot';
+        }
+      }
+    } catch (err) {
+      // Silent fail
+    }
+  }
+  updateStatus();
+  setInterval(updateStatus, 2000);
+});
+</script>
+</body>
+</html>

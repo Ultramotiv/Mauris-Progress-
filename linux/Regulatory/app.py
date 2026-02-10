@@ -44,13 +44,28 @@ def transform_force_to_world(ft_forces, orientation):
 def ema(new, old, alpha):
     return alpha * new + (1 - alpha) * old
 
+def enforce_safe_velocity(velocity_percent):
+    """
+    Enforce safety velocity limit of 26 deg/sec for robot movements.
+    Ensures velocity percentage never exceeds what corresponds to 26 deg/sec.
+    
+    Args:
+        velocity_percent: Requested velocity percentage [0-100]
+    
+    Returns:
+        Clamped velocity percentage that enforces safety limit
+    """
+    # Maximum safe velocity percentage (26 deg/sec = 26% of max if max is ~100 deg/sec)
+    MAX_SAFE_VELOCITY_PERCENT = 26.0
+    return min(float(velocity_percent), MAX_SAFE_VELOCITY_PERCENT)
+
 # === Global Parameters ===
 IMPEDANCE_PARAMS = {
     'lamde_dain': [2.5, 2.0, 2.0, 2.0, 2.0, 2.0],
     'b_gain': [20.0, 10.0, 10.0, 5.0, 5.0, 1.0],
     'k_gain': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
     'max_tcp_vel': 500,
-    'max_tcp_ori_vel': 90
+    'max_tcp_ori_vel': 26
 }
 
 FORCE_TO_MOTION_SCALE = 6.0
@@ -62,7 +77,24 @@ SERVO_UPDATE_RATE = 0.008
 FORCE_THRESHOLD = 0.8
 FORCE_FILTER_ALPHA = 0.28
 force_thresholds = [2.0, 2.0, 2.5, 1.0, 1.0, 1.0]
-MAX_JOINT_VELOCITY = 60.0
+MAX_JOINT_VELOCITY = 26.0  # deg/sec - Safety limit for robot joint velocity
+
+# === Home Position Parameters ===
+HOME_TARGET_JOINTS = [
+    2.608,    # J1
+    -88.384,  # J2
+    127.473,  # J3
+    -137.27,  # J4
+    -92.275,  # J5
+    -90.118   # J6
+]
+HOME_MAX_JOINT_SPEED = 180.0  # deg/s (adjust if your model differs)
+HOME_DESIRED_SPEED = 7.70     # deg/s
+
+# === Passive Mode Speed (consistent for all movements) ===
+#NOTE: PASSIVE_MODE_SPEED is velocity percentage [0-100]
+# Set to 26.0 (26%) to correspond with MAX_JOINT_VELOCITY of 26 deg/sec for safety
+PASSIVE_MODE_SPEED = 5.0  # Velocity percentage [0-100], enforces 26 deg/sec safety limit
 
 # === Global State ===
 app = Flask(__name__)
@@ -107,6 +139,65 @@ def custom_drag_teach_mode(enable=True):
         time.sleep(0.5)
         drag_mode_enabled = False
         return True
+
+
+def move_robot_home():
+    """Move robot to the predefined home joint position at 7.70 deg/sec."""
+    current_pose = robot.GetActualJointPosDegree(flag=1)
+    print("\nCurrent Joint Position [J1, J2, J3, J4, J5, J6]:")
+    print(current_pose)
+
+    vel_percent = round((HOME_DESIRED_SPEED / HOME_MAX_JOINT_SPEED) * 100.0, 3)
+    ovl_percent = 100.0
+
+    print(f"\nMoving to joint position with {HOME_DESIRED_SPEED} deg/s")
+    print(f" -> vel = {vel_percent}%   ovl = {ovl_percent}%")
+
+    ret = robot.MoveJ(
+        joint_pos=HOME_TARGET_JOINTS,
+        tool=0,
+        user=0,
+        desc_pos=[0.0] * 7,
+        vel=vel_percent,
+        acc=0.0,
+        ovl=ovl_percent,
+        exaxis_pos=[0.0] * 4,
+        blendT=-1.0,
+        offset_flag=0,
+        offset_pos=[0.0] * 6
+    )
+
+    current_pose = robot.GetActualJointPosDegree(flag=1)
+    print("\nCurrent Joint Position [J1, J2, J3, J4, J5, J6]:")
+    print(current_pose)
+
+    if ret == 0:
+        print("MoveJ command succeeded – robot reached the target joint position.")
+    else:
+        print(f"MoveJ failed with error code: {ret}")
+
+    time.sleep(0.5)
+    return ret
+
+
+def _is_request_sent(ret):
+    if isinstance(ret, str):
+        return "request-sent" in ret.strip().lower()
+    if isinstance(ret, (list, tuple)):
+        for item in ret:
+            if isinstance(item, str) and "request-sent" in item.strip().lower():
+                return True
+    return False
+
+
+def _is_success_ret(ret):
+    if ret == 0:
+        return True
+    if _is_request_sent(ret):
+        return True
+    if isinstance(ret, (list, tuple)) and ret:
+        return ret[0] == 0
+    return False
 
 
 # ============================================================================
@@ -236,9 +327,8 @@ class ActiveTherapy:
     def get_z_limits(self):
         return self.z_limits
     
-    
 # ============================================================================
-# PASSIVE THERAPY CLASS
+# PASSIVE THERAPY CLASS (Smart Auto-Direction Detection)
 # ============================================================================
 class PassiveTherapy:
     def __init__(self, robot_instance):
@@ -246,6 +336,8 @@ class PassiveTherapy:
         self.is_recording = False
         self.current_recording_name = None
         self.playback_active = False
+        self.current_direction = None
+        self.trajectory_cache = {}  # Cache start/end poses for trajectories
 
     def start_recording(self, name):
         if self.is_recording:
@@ -282,6 +374,9 @@ class PassiveTherapy:
             self.current_recording_name = None
             if ret != 0:
                 return False, f"SetWebTPDStop failed (code: {ret})"
+            # Clear cache for this trajectory so it gets re-learned
+            if name in self.trajectory_cache:
+                del self.trajectory_cache[name]
             return True, name
         except Exception as e:
             return False, str(e)
@@ -307,45 +402,209 @@ class PassiveTherapy:
             timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
             f.write(f'{timestamp},{name},Recorded via Flask\n')
 
+    def _get_trajectory_endpoints(self, filename, allow_probe=True):
+        """
+        Get or cache the start and end positions of a trajectory.
+        Returns: (start_pose, end_pose) or (None, None) on error
+        """
+        # Check cache first
+        if filename in self.trajectory_cache:
+            return self.trajectory_cache[filename]
+        
+        try:
+            # Load trajectory
+            ret = self.robot.LoadTPD(filename)
+            if ret != 0:
+                print(f"LoadTPD failed: {ret}")
+                return None, None
+            
+            # Get start pose
+            err, start_pose = self.robot.GetTPDStartPose(filename)
+            if err != 0:
+                print(f"GetTPDStartPose failed: {err}")
+                return None, None
+            
+            if not allow_probe:
+                return start_pose, None
+
+            # Get end pose by playing trajectory quickly
+            # Enforce maximum joint velocity of 26 deg/sec for safety
+            # Manual safety speed: 400 mm/s, Auto mode: 50% = 200 mm/s, Joint limit: 26 deg/s
+            # speedPercent=5: Strict overspeed protection, allows minimal speed reduction
+            self.robot.MoveL(start_pose, 0, 0, vel=PASSIVE_MODE_SPEED, overSpeedStrategy=1, speedPercent=2)
+            time.sleep(0.3)
+
+            # Play at high speed to reach end
+            self.robot.MoveTPD(filename, 1, 100)  # 300% speed
+
+            # Wait for completion
+            timeout = 30  # 30 second timeout
+            start_time = time.time()
+            while True:
+                if time.time() - start_time > timeout:
+                    print("Timeout waiting for trajectory completion")
+                    return None, None
+                err, done = self.robot.GetRobotMotionDone()
+                if err == 0 and done == 1:
+                    break
+                time.sleep(0.05)
+
+            # Get end position
+            err, end_pose = self.robot.GetActualTCPPose()
+            if err != 0:
+                print(f"GetActualTCPPose failed: {err}")
+                return None, None
+
+            # Cache the endpoints
+            self.trajectory_cache[filename] = (start_pose, end_pose)
+            print(f"✅ Cached endpoints for {filename}")
+            print(f"   Start: {[round(p, 2) for p in start_pose[:3]]}")
+            print(f"   End: {[round(p, 2) for p in end_pose[:3]]}")
+
+            return start_pose, end_pose
+            
+        except Exception as e:
+            print(f"Error getting trajectory endpoints: {e}")
+            return None, None
+
+    def _calculate_distance(self, pose1, pose2):
+        """Calculate Euclidean distance between two poses (using XYZ only)"""
+        return math.sqrt(sum((pose1[i] - pose2[i])**2 for i in range(3)))
+
+    def _determine_direction(self, filename, current_pose):
+        """
+        Determine whether to play forward or reverse based on current position.
+        Returns: 1 for forward, -1 for reverse
+        """
+        start_pose, end_pose = self._get_trajectory_endpoints(filename, allow_probe=False)
+        
+        if start_pose is None or end_pose is None:
+            print("⚠️ Could not determine endpoints, defaulting to forward")
+            return 1
+        
+        # Calculate distances from current position to start and end
+        dist_to_start = self._calculate_distance(current_pose, start_pose)
+        dist_to_end = self._calculate_distance(current_pose, end_pose)
+        
+        print(f"📍 Distance to start: {dist_to_start:.2f} mm")
+        print(f"📍 Distance to end: {dist_to_end:.2f} mm")
+        
+        # If closer to start, play forward; if closer to end, play reverse
+        if dist_to_start <= dist_to_end:
+            print("➡️ Playing FORWARD (closer to start)")
+            return 1
+        else:
+            print("⬅️ Playing REVERSE (closer to end)")
+            return -1
+
     def start_playback(self, filename, repetitions=1):
+        """
+        Smart playback: automatically determines direction based on robot position.
+        Always follows the trajectory - forward from start, reverse from end.
+        """
         global playback_repetition_count
         if self.playback_active:
             return False, "Playback already active"
+
+        try:
+            repetitions = int(repetitions)
+        except Exception:
+            repetitions = 1
+        repetitions = max(1, min(100, repetitions))
+        
         def playback_task():
             global playback_repetition_count
             try:
                 self.playback_active = True
                 playback_repetition_count = 0
+                
+                # Load the trajectory
                 ret = self.robot.LoadTPD(filename)
                 if ret != 0:
                     print(f"LoadTPD failed: {ret}")
                     return
+                
+                # Get current position once to determine stable direction
+                err, current_pose = self.robot.GetActualTCPPose()
+                if err != 0:
+                    print(f"GetActualTCPPose failed: {err}")
+                    return
+
+                # Determine direction based on current position
+                direction = self._determine_direction(filename, current_pose)
+                self.current_direction = 'forward' if direction == 1 else 'reverse'
+
+                # Get endpoints without extra probe move (avoid extra trajectory run)
+                start_pose, end_pose = self._get_trajectory_endpoints(filename, allow_probe=False)
+                if start_pose is None:
+                    print("Failed to get trajectory start pose")
+                    return
+                if end_pose is None and direction == -1:
+                    print("⚠️ End pose unknown; forcing forward playback")
+                    direction = 1
+                    self.current_direction = 'forward'
+
                 for rep in range(repetitions):
                     if not self.playback_active:
                         break
-                    playback_repetition_count = rep + 1
-                    err, start_pose = self.robot.GetTPDStartPose(filename)
-                    if err != 0:
-                        print(f"GetTPDStartPose failed: {err}")
+
+                    # Move to appropriate starting position
+                    if direction == 1:
+                        # Forward: move to start
+                        print(f"🔄 Moving to START position for forward playback (rep {rep + 1})...")
+                        # Enforce maximum joint velocity of 26 deg/sec for safety
+                        # speedPercent=5: Strict overspeed protection, allows minimal speed reduction
+                        self.robot.MoveL(start_pose, 0, 0, vel=PASSIVE_MODE_SPEED, overSpeedStrategy=1, speedPercent=2)
+                    else:
+                        # Reverse: move to end
+                        print(f"🔄 Moving to END position for reverse playback (rep {rep + 1})...")
+                        # Enforce maximum joint velocity of 26 deg/sec for safety
+                        # speedPercent=5: Strict overspeed protection, allows minimal speed reduction
+                        self.robot.MoveL(end_pose, 0, 0, vel=PASSIVE_MODE_SPEED, overSpeedStrategy=1, speedPercent=2)
+
+                    # Wait for move completion
+                    while self.playback_active:
+                        err, done = self.robot.GetRobotMotionDone()
+                        if err == 0 and done == 1:
+                            break
+                        time.sleep(0.05)
+
+                    if not self.playback_active:
                         break
-                    self.robot.MoveL(start_pose, 0, 0)
-                    time.sleep(0.5)
-                    self.robot.MoveTPD(filename, 1, 100)
+
+                    time.sleep(0.2)
+
+                    # Play trajectory in determined direction
+                    print(f"▶️ Playing trajectory ({self.current_direction})...")
+                    self.robot.MoveTPD(filename, direction, 100)
+
+                    # Wait for completion
                     while self.playback_active:
                         err, done = self.robot.GetRobotMotionDone()
                         if err == 0 and done == 1:
                             break
                         time.sleep(0.1)
+
                     if not self.playback_active:
                         break
-                    time.sleep(0.5)
-                playback_repetition_count = repetitions
+
+                    playback_repetition_count += 1
+                    print(f"✅ Repetition {playback_repetition_count}/{repetitions} complete")
+                    time.sleep(0.2)
+
+                if playback_repetition_count == repetitions:
+                    print(f"🎉 Playback complete ({repetitions} repetitions)")
+                else:
+                    print(f"⚠️ Playback stopped early ({playback_repetition_count}/{repetitions})")
+                
             except Exception as e:
                 print(f"Playback error: {e}")
             finally:
                 self.playback_active = False
+                self.current_direction = None
+        
         threading.Thread(target=playback_task, daemon=True).start()
-        return True, "Playback started"
+        return True, "Smart playback started (auto-direction)"
 
     def stop_playback(self):
         self.playback_active = False
@@ -355,8 +614,45 @@ class PassiveTherapy:
             pass
         return True, "Playback stopped"
 
+    def pause_playback(self):
+        if not self.playback_active:
+            return False, "Playback not active"
+        try:
+            ret = self.robot.PauseMotion()
+            if ret != 0:
+                return False, f"PauseMotion failed (code: {ret})"
+            return True, "Playback paused"
+        except Exception as e:
+            return False, str(e)
+
+    def resume_playback(self):
+        if not self.playback_active:
+            return False, "Playback not active"
+        try:
+            ret = self.robot.ResumeMotion()
+            if ret != 0:
+                return False, f"ResumeMotion failed (code: {ret})"
+            return True, "Playback resumed"
+        except Exception as e:
+            return False, str(e)
+
     def is_playback_active(self):
         return self.playback_active
+    
+    def get_playback_direction(self):
+        return self.current_direction
+
+    def clear_trajectory_cache(self, filename=None):
+        """Clear cached trajectory endpoints (useful if trajectory is modified)"""
+        if filename:
+            if filename in self.trajectory_cache:
+                del self.trajectory_cache[filename]
+                return True, f"Cache cleared for {filename}"
+            return False, f"No cache found for {filename}"
+        else:
+            self.trajectory_cache.clear()
+            return True, "All trajectory cache cleared"
+
 
 # ============================================================================
 # Guided THERAPY CLASS
@@ -571,6 +867,60 @@ def stop_playback():
     if passive_therapy:
         passive_therapy.stop_playback()
     return jsonify({'status': 'success'})
+
+@app.route('/home_position', methods=['POST'])
+def home_position():
+    if current_mode != 'passive':
+        return jsonify({'status': 'error', 'message': 'Only in passive mode'}), 400
+    try:
+        # Ensure robot is not in drag/impedance mode and not playing back
+        if passive_therapy and passive_therapy.is_playback_active():
+            passive_therapy.stop_playback()
+        if drag_mode_enabled:
+            custom_drag_teach_mode(enable=False)
+
+        ret = move_robot_home()
+        if not _is_success_ret(ret):
+            return jsonify({'status': 'error', 'message': f'MoveJ failed (code: {ret})'}), 500
+
+        # If the SDK is non-blocking, wait for motion completion
+        timeout = 30
+        start_time = time.time()
+        while True:
+            if time.time() - start_time > timeout:
+                return jsonify({'status': 'error', 'message': 'Home move timeout'}), 500
+            err, done = robot.GetRobotMotionDone()
+            if err == 0 and done == 1:
+                break
+            time.sleep(0.1)
+
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/pause_playback', methods=['POST'])
+def pause_playback():
+    if current_mode != 'passive':
+        return jsonify({'status': 'error', 'message': 'Only in passive mode'}), 400
+    if not passive_therapy:
+        return jsonify({'status': 'error', 'message': 'Passive therapy not ready'}), 500
+    success, msg = passive_therapy.pause_playback()
+    if success:
+        return jsonify({'status': 'success'})
+    else:
+        return jsonify({'status': 'error', 'message': msg}), 400
+
+@app.route('/resume_playback', methods=['POST'])
+def resume_playback():
+    if current_mode != 'passive':
+        return jsonify({'status': 'error', 'message': 'Only in passive mode'}), 400
+    if not passive_therapy:
+        return jsonify({'status': 'error', 'message': 'Passive therapy not ready'}), 500
+    success, msg = passive_therapy.resume_playback()
+    if success:
+        return jsonify({'status': 'success'})
+    else:
+        return jsonify({'status': 'error', 'message': msg}), 400
 
 @app.route('/get_telemetry', methods=['GET'])
 def get_telemetry():

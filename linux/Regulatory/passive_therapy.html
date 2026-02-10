@@ -206,17 +206,24 @@
             </div>
             <div style="margin: 0.75rem 0;">
                 <label style="display: block; margin-bottom: 0.25rem; color: #cbd5e1;">Repetitions:</label>
-                <input type="number" id="repetition-count" min="1" max="20" value="5" />
+                <input type="number" id="repetition-count" min="1" max="100" value="5" />
             </div>
             <!-- ✅ ADD THIS NEW DIV TO SHOW CURRENT REPETITION -->
             <div style="margin: 0.75rem 0; color: #93c5fd; font-weight: 600;">
                 Current Rep: <span id="current-rep">0</span>
             </div>
-            <button class="mode-btn" id="playback-btn" onclick="startPlayback()" disabled>Start Playback</button>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem;">
+                <button class="mode-btn" id="playback-btn" onclick="startPlayback()" disabled>Start Playback</button>
+                <button class="mode-btn" id="pause-btn" onclick="pausePlayback()" disabled>Pause</button>
+                <button class="mode-btn" id="resume-btn" onclick="resumePlayback()" disabled>Play</button>
+            </div>
         </div>
 
-        <!-- DRAG MODE -->
-        <button class="mode-btn" id="drag-btn" onclick="toggleDragMode()">Drag Mode</button>
+        <!-- DRAG MODE / HOME -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+            <button class="mode-btn" id="drag-btn" onclick="toggleDragMode()">Drag Mode</button>
+            <button class="mode-btn" id="home-btn" onclick="moveHome()">Home</button>
+        </div>
 
         <div class="status" id="status-display">Switching to Passive Mode...</div>
 
@@ -359,7 +366,9 @@
                 return;
             }
             const filename = document.getElementById('exercise-select').value;
-            const reps = parseInt(document.getElementById('repetition-count').value) || 5;
+            let reps = parseInt(document.getElementById('repetition-count').value) || 5;
+            reps = Math.max(1, Math.min(100, reps));
+            document.getElementById('repetition-count').value = reps;
 
             callAPI('/start_playback', { filename, repetitions: reps })
                 .then(res => res.json())
@@ -368,6 +377,8 @@
                         playbackRunning = true;
                         document.getElementById('playback-btn').textContent = 'Stop Playback';
                         document.getElementById('playback-btn').onclick = stopPlayback;
+                        document.getElementById('pause-btn').disabled = false;
+                        document.getElementById('resume-btn').disabled = true;
                         updateStatus();
                     } else {
                         alert('Playback failed: ' + (data.message || 'Unknown'));
@@ -385,9 +396,49 @@
                     playbackRunning = false;
                     document.getElementById('playback-btn').textContent = 'Start Playback';
                     document.getElementById('playback-btn').onclick = startPlayback;
+                    document.getElementById('pause-btn').disabled = true;
+                    document.getElementById('resume-btn').disabled = true;
                     updateStatus();
                 })
                 .catch(console.error);
+        }
+
+        function pausePlayback() {
+            if (!playbackRunning) return;
+            callAPI('/pause_playback')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        document.getElementById('pause-btn').disabled = true;
+                        document.getElementById('resume-btn').disabled = false;
+                        updateStatus();
+                    } else {
+                        alert('Pause failed: ' + (data.message || 'Unknown'));
+                    }
+                })
+                .catch(err => {
+                    alert('Failed to pause playback');
+                    console.error(err);
+                });
+        }
+
+        function resumePlayback() {
+            if (!playbackRunning) return;
+            callAPI('/resume_playback')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        document.getElementById('pause-btn').disabled = false;
+                        document.getElementById('resume-btn').disabled = true;
+                        updateStatus();
+                    } else {
+                        alert('Resume failed: ' + (data.message || 'Unknown'));
+                    }
+                })
+                .catch(err => {
+                    alert('Failed to resume playback');
+                    console.error(err);
+                });
         }
 
         // ===== DRAG MODE =====
@@ -413,6 +464,30 @@
                 })
                 .catch(err => {
                     alert('Drag mode failed. Is robot connected?');
+                    console.error(err);
+                });
+        }
+
+        function moveHome() {
+            if (!modeSet) {
+                alert('Please wait until Passive Mode is ready');
+                return;
+            }
+            if (playbackRunning || recording) {
+                alert('Stop playback/recording before moving home');
+                return;
+            }
+            callAPI('/home_position')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        document.getElementById('status-display').textContent = 'Moving to Home...';
+                    } else {
+                        alert('Home move failed: ' + (data.message || 'Unknown'));
+                    }
+                })
+                .catch(err => {
+                    alert('Home move failed. Is robot connected?');
                     console.error(err);
                 });
         }
