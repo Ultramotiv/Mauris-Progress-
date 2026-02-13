@@ -78,6 +78,7 @@ FORCE_THRESHOLD = 0.8
 FORCE_FILTER_ALPHA = 0.28
 force_thresholds = [2.0, 2.0, 2.5, 1.0, 1.0, 1.0]
 MAX_JOINT_VELOCITY = 26.0  # deg/sec - Safety limit for robot joint velocity
+TELEMETRY_UPDATE_RATE = 0.02  # 20 ms (50 Hz) for lower UI latency
 
 # === Home Position Parameters ===
 HOME_TARGET_JOINTS = [
@@ -567,12 +568,12 @@ class PassiveTherapy:
                         err, done = self.robot.GetRobotMotionDone()
                         if err == 0 and done == 1:
                             break
-                        time.sleep(0.05)
+                        time.sleep(0.02)
 
                     if not self.playback_active:
                         break
 
-                    time.sleep(0.2)
+                    time.sleep(0.05)
 
                     # Play trajectory in determined direction
                     print(f"▶️ Playing trajectory ({self.current_direction})...")
@@ -583,14 +584,14 @@ class PassiveTherapy:
                         err, done = self.robot.GetRobotMotionDone()
                         if err == 0 and done == 1:
                             break
-                        time.sleep(0.1)
+                        time.sleep(0.02)
 
                     if not self.playback_active:
                         break
 
                     playback_repetition_count += 1
                     print(f"✅ Repetition {playback_repetition_count}/{repetitions} complete")
-                    time.sleep(0.2)
+                    time.sleep(0.05)
 
                 if playback_repetition_count == repetitions:
                     print(f"🎉 Playback complete ({repetitions} repetitions)")
@@ -687,7 +688,7 @@ def start_telemetry():
                 current_fz = compensated[2]
         except:
             pass
-        time.sleep(0.1)
+        time.sleep(TELEMETRY_UPDATE_RATE)
 
 
 # ============================================================================
